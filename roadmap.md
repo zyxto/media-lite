@@ -22,7 +22,7 @@ systemd).
 | Arranque hasta ver la portada | **< 2 s** (sin contar red) | |
 | Abrir un video de YouTube (reproductor de YouTube ya en caché) | **< 3 s** | Sanson: 1–2 s con VisionOS |
 | Primera vez tras un cambio del reproductor de YouTube | **< 30 s**, una vez cada varios días | Medir en la Fase 0 |
-| Pico de RAM del solucionador JS (proceso aparte, temporal) | **< 150 MB** | Se libera al terminar |
+| Pico de RAM del solucionador JS (proceso aparte, temporal) | **< 256 MB** | Medido: 210 MB la primera vez, 76 MB con preprocesado. Se libera al terminar |
 
 Principios que guían todas las decisiones:
 
@@ -171,8 +171,8 @@ que Lumière ya tenía en parte "por compatibilidad".
 1. **Motor embebido: QuickJS-NG mediante `rquickjs`** (licencia MIT; suma ~1–1,5 MB al binario). Es
    el mismo motor que ya traía Sanson, pero acá **solo ejecuta el solucionador**: no tiene
    `fetch`, ni sockets, ni disco. yt-dlp advierte que con QuickJS-NG **anterior a 0.12** resolver un
-   desafío puede tardar *varios minutos*. Hay que verificar en la Fase 0 qué versión trae
-   `rquickjs-sys`, y si es vieja, compilar contra una ≥ 0.12.
+   desafío puede tardar *varios minutos*. **Verificado**: `rquickjs-sys` 0.14.0 trae QuickJS-NG 0.16.2
+   (ver `docs/hardware.md`).
    - Descartados: **Deno/Node** (de 40 a 100 MB de binario y más de 60 MB de RAM: demasiado para
      esta laptop) y **Boa** (escrito en Rust puro, pero bastante más lento que QuickJS).
 2. **Solucionador: los scripts oficiales de [`yt-dlp/ejs`](https://github.com/yt-dlp/ejs)**
@@ -289,22 +289,20 @@ Cada fase termina con algo que se puede usar. Las fases 3 a 6 se pueden hacer en
 
 Antes de escribir la app, medir en la laptop.
 
-- [ ] `lspci | grep VGA`, `glxinfo -B`, `vainfo`: anotar GPU, versión de GL y si VA-API decodifica H.264.
-- [ ] Probar mpv con un video de YouTube a 360p/480p/720p en H.264
+- [ ] (pendiente, laptop) `lspci | grep VGA`, `glxinfo -B`, `vainfo`: anotar GPU, versión de GL y si VA-API decodifica H.264.
+- [ ] (pendiente, laptop) Probar mpv con un video de YouTube a 360p/480p/720p en H.264
       (`yt-dlp -f "bv[vcodec^=avc1][height<=480]+ba[acodec^=mp4a]"` y pasarle las URLs a mpv).
       Medir CPU y RAM con `--vo=gpu`, con `--vo=xv`, con `--hwdec=no` y con `--hwdec=vaapi`.
-- [ ] Probar un directo HLS de Twitch y un canal de Pluto TV en mpv (las URLs se sacan con las herramientas CLI
+- [ ] (pendiente, laptop) Probar un directo HLS de Twitch y un canal de Pluto TV en mpv (las URLs se sacan con las herramientas CLI
       de las referencias si hace falta).
-- [ ] Compilar un ejemplo de Slint (grilla con 200 tarjetas e imágenes) con `winit-software` y
+- [ ] (pendiente, laptop) Compilar un ejemplo de Slint (grilla con 200 tarjetas e imágenes) con `winit-software` y
       `winit-femtovg`. Medir RAM y fluidez al hacer scroll.
-- [ ] **Solucionador de YouTube en este CPU**: compilar un prototipo con `rquickjs` que cargue los
-      scripts de `yt-dlp/ejs` y resuelva un desafío `n` de un `base.js` real. Medir:
-      (a) la versión de QuickJS-NG que trae `rquickjs-sys` (tiene que ser ≥ 0.12),
-      (b) el tiempo y el pico de RAM de la primera vez (`type: "player"`),
-      (c) el tiempo con el reproductor ya preprocesado (`type: "preprocessed"`).
-      Si (b) pasa de ~60 s, evaluar Boa o pedirle a Deno solo el preprocesado y guardarlo.
-- [ ] Comprobar que los clientes `visionos` y `web_safari` entregan HLS con variantes H.264 para videos comunes y directos.
-- [ ] Anotar los resultados en `docs/hardware.md`. Con eso se fijan las opciones de mpv por defecto, el renderizador y la calidad por defecto.
+- [x] **Solucionador de YouTube**: prototipo con `rquickjs` que carga los
+      scripts de `yt-dlp/ejs` y resuelve desafíos `n` de un `base.js` real (ver `docs/hardware.md`):
+      (a) QuickJS-NG 0.16.2 (≥ 0.12), (b) primera vez: 7,4 s y 210 MB en el entorno de desarrollo,
+      (c) con preprocesado: 0,45 s y 76 MB. Pendiente: medir en la T4500.
+- [ ] (pendiente, red residencial) Comprobar que los clientes `visionos` y `web_safari` entregan HLS con variantes H.264 para videos comunes y directos. Desde el entorno de desarrollo YouTube bloquea todos los clientes, así que no es concluyente.
+- [x] Anotar los resultados en `docs/hardware.md`. Lo medido en la laptop se completa después; mientras tanto rigen los valores conservadores de ese archivo.
 
 **Terminado cuando** sepamos qué combinación de `vo`/`hwdec`/calidad se ve fluida, qué
 renderizador de Slint usar y que el solucionador de YouTube anda en tiempos aceptables.
@@ -502,7 +500,7 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 | `image` (jpeg, png, webp) | Miniaturas | Se activan solo los formatos necesarios |
 | `lru` | Caché en memoria | |
 | `tungstenite` (rustls) | Chat | Síncrono |
-| `rquickjs` (QuickJS-NG) | Desafíos `n`/`sig` de YouTube | MIT, ~1,5 MB, el motor más rápido entre los livianos; verificar QuickJS-NG ≥ 0.12 |
+| `rquickjs` (QuickJS-NG) | Desafíos `n`/`sig` de YouTube | MIT, ~1,5 MB, el motor más rápido entre los livianos; `rquickjs-sys` 0.14.0 trae QuickJS-NG 0.16.2 |
 | `sha2` | Verificar los scripts `ejs` bajados | |
 | `x11rb` | Ventana hija para mpv integrado, teclas multimedia | Puro Rust |
 | `md-5`, `sha1`, `base64`, `url`, `percent-encoding` | Utilidades | |
@@ -554,3 +552,5 @@ Los problemas de RAM y CPU aparecen ahí, no en la máquina de desarrollo.
 - [ytdlp-ejs (crate)](https://docs.rs/crate/ytdlp-ejs/0.1.1): versión en Rust de `ejs` (con SWC). Sirve de referencia, pero es muy nueva y pesa más
 - [rquickjs](https://github.com/DelSkayn/rquickjs): bindings de QuickJS-NG para Rust (MIT)
 - [googlevideo (SABR)](https://ytjs.dev/googlevideo/): referencia por si alguna vez hace falta implementar SABR
+- [yt-dlp/ejs 0.8.0](https://github.com/yt-dlp/ejs/releases/tag/0.8.0): scripts `yt.solver.{lib,core}.min.js` usados en el prototipo de la Fase 0
+- [yt-dlp: constantes de clientes (`_base.py`)](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py): versiones de `visionos`, `web_safari`, `web_embedded` y `tv`
