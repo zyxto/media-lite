@@ -50,12 +50,14 @@ fi
 . "$HOME/.cargo/env"
 
 cd /src
+# El build va fuera del repo: así no se escriben archivos de root dentro de la carpeta del proyecto.
+export CARGO_TARGET_DIR=/tmp/media-lite-target
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 echo "==> media-lite $VERSION"
 
 cargo build --release --locked -p media-lite
 
-BIN=target/release/media-lite
+BIN=$CARGO_TARGET_DIR/release/media-lite
 echo "==> versiones de glibc que pide el binario (deben ser <= 2.31)"
 MAX_GLIBC="$(objdump -T "$BIN" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
 echo "    máxima: $MAX_GLIBC"
@@ -64,7 +66,7 @@ if [ "$(printf '%s\n%s\n' "GLIBC_2.31" "$MAX_GLIBC" | sort -V | tail -1)" != "GL
     exit 1
 fi
 
-APPDIR=AppDir
+APPDIR=/tmp/media-lite-appdir
 rm -rf "$APPDIR" dist
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps" "$APPDIR/usr/share/doc/media-lite"
@@ -95,5 +97,5 @@ ARCH=x86_64 "$TOOLS/appimagetool" --appimage-extract-and-run -n --runtime-file "
     "$APPDIR" "dist/media-lite-x86_64.AppImage"
 (cd dist && sha256sum media-lite-x86_64.AppImage > media-lite-x86_64.AppImage.sha256)
 
-chown -R "${HOST_UID:-0}:${HOST_GID:-0}" dist "$APPDIR" target 2>/dev/null || true
+chown -R "${HOST_UID:-0}:${HOST_GID:-0}" dist 2>/dev/null || true
 echo "==> listo: dist/media-lite-x86_64.AppImage ($(du -h dist/media-lite-x86_64.AppImage | cut -f1))"

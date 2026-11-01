@@ -1,0 +1,15 @@
+[package]
+name = "media-lite-ytsolver"
+description = "Solucionador de desafíos n y sig de YouTube: scripts de yt-dlp/ejs en QuickJS-NG, en un proceso aparte"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+media-lite-core.workspace = true
+rquickjs = "0.14"
+serde_json.workspace = true
+sha2.workspace = true
+log.workspace = true

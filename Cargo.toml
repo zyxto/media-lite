@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/providers",
     "crates/player",
+    "crates/ytsolver",
     "crates/cli",
     "app",
 ]
@@ -19,6 +20,7 @@ rust-version = "1.85"
 media-lite-core = { path = "crates/core" }
 media-lite-providers = { path = "crates/providers" }
 media-lite-player = { path = "crates/player" }
+media-lite-ytsolver = { path = "crates/ytsolver" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"

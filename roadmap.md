@@ -367,17 +367,14 @@ Además, en esta fase: vista de **series** (chips de temporadas y los episodios 
 
 Portar `plugins/youtube/script.js` y `comun.js`, y sumar el solucionador de desafíos (sección 2.4).
 
-**4a. Solucionador (`crates/ytsolver`), 1 semana**
+**4a. Solucionador (`crates/ytsolver`), 1 semana** — hecho en lo que se puede verificar sin YouTube
 
-- [ ] Obtener la URL y el `player_id` de `base.js` (de `/iframe_api` o de la página del video) y bajarlo a `~/.cache/media-lite/yt-player/`.
-- [ ] Subcomando `media-lite --yt-solver`: lee el JSON de `ejs` por stdin, ejecuta `lib` + `core` en
-      QuickJS-NG **sin** módulos de red ni archivos y responde por stdout. Tiene límite de memoria
-      (`JS_SetMemoryLimit`) y de tiempo.
-- [ ] Caché de `preprocessed_player` por `player_id` y de los `n` ya resueltos. Se borran las
-      versiones del reproductor de más de 14 días.
-- [ ] Al encontrar un `base.js` nuevo, preprocesarlo en segundo plano y no esperar a que el usuario abra un video.
-- [ ] Actualizar los scripts `ejs` desde GitHub (verificando el hash) y elegir en Ajustes entre la versión incluida y la bajada.
-- [ ] Pruebas con `base.js` reales guardados y sus respuestas esperadas (como hace `yt-dlp/ejs`), más una prueba nocturna en la CI contra YouTube.
+- [ ] Obtener la URL y el `player_id` de `base.js` (de la página del video): pendiente, va con el proveedor de YouTube (4b/4c).
+- [x] Subcomando `media-lite --yt-solver`: lee el JSON de ejs por stdin y responde por stdout, en un proceso aparte. QuickJS-NG (`rquickjs` 0.14) con límite de memoria de 256 MB; el padre mata el proceso a los 60 s.
+- [x] Caché por `player_id` del `preprocessed_player` y de los `n` y `sig` ya resueltos. Los ids se validan (8 hex) para no escribir fuera de la carpeta. La poda de 14 días está escrita (`Cache::prune`); falta llamarla al arrancar.
+- [ ] Preprocesar en segundo plano al encontrar un `base.js` nuevo: pendiente, depende de saber la versión del reproductor (4c).
+- [x] Actualizar los scripts desde GitHub con verificación: `update::fetch_latest` baja el último release y compara cada archivo con el digest sha256 que publica la API (verificado en vivo). La copia instalada en `~/.local/share/media-lite/ejs/` se usa solo si su manifiesto y sus hashes coinciden. **Falta el botón en Ajustes** (Fase 7).
+- [x] Pruebas con un `base.js` real: `solves_n_challenges_like_node` (prueba ignorada, con `MEDIA_LITE_TEST_BASEJS`) da los mismos resultados que Node. Prueba de punta a punta del proceso aparte: pendiente de correrla con el binario.
 
 **4b. Cascada de clientes**
 

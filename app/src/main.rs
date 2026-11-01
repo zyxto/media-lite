@@ -35,6 +35,10 @@ const NET_THREADS: usize = 2;
 const IMAGE_THREADS: usize = 1;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // Proceso aparte del solucionador de YouTube: lee JSON por stdin y responde por stdout.
+    if std::env::args().nth(1).as_deref() == Some("--yt-solver") {
+        std::process::exit(media_lite_ytsolver::child_main());
+    }
     env_logger::Builder::from_env(env_logger::Env::default().filter_or("MEDIA_LITE_LOG", "warn"))
         .init();
 
