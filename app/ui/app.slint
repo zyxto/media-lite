@@ -1,7 +1,7 @@
 // Interfaz de media-lite. Todo el estado vive en Rust; acá solo se dibuja y se avisan los clics.
 // GPL-3.0-or-later.
 
-import { ListView } from "std-widgets.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
 // Inter (SIL OFL 1.1, ver app/assets/fonts/OFL.txt): Slint las embebe en el binario.
 import "../assets/fonts/Inter-Regular.ttf";
 import "../assets/fonts/Inter-SemiBold.ttf";
@@ -112,11 +112,13 @@ component CardView inherits Rectangle {
 component PlayButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary: false;
+    in property <bool> available: true;
     callback clicked();
 
     height: 34px;
     border-radius: 8px;
     background: root.primary ? Theme.accent : Theme.surface-hi;
+    opacity: root.available ? 1 : 0.4;
 
     Text {
         width: parent.width;
@@ -126,6 +128,35 @@ component PlayButton inherits Rectangle {
         font-size: 13px;
         font-weight: 600;
         horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.available;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Chip de categoría o de temporada.
+component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+
+    height: 30px;
+    width: label-text.preferred-width + 24px;
+    border-radius: 15px;
+    background: root.active ? Theme.accent : Theme.surface;
+
+    label-text := Text {
+        x: 12px;
+        height: parent.height;
+        text: root.label;
+        color: root.active ? #ffffff : Theme.muted;
+        font-size: 12px;
+        font-weight: 600;
         vertical-alignment: center;
     }
 
@@ -142,7 +173,7 @@ export component AppWindow inherits Window {
     default-font-family: "Inter";
     preferred-width: 1100px;
     preferred-height: 720px;
-    min-width: 720px;
+    min-width: 860px;
     min-height: 460px;
 
     in property <[string]> platforms;
@@ -163,6 +194,10 @@ export component AppWindow inherits Window {
     in property <float> play-progress;
     in property <bool> play-paused;
     in property <string> play-status;
+    in property <[string]> chips;
+    in property <int> chip-index: 0;
+    in property <bool> can-step-prev;
+    in property <bool> can-step-next;
 
     callback play-requested();
     callback toggle-pause-requested();
@@ -172,6 +207,9 @@ export component AppWindow inherits Window {
     callback fullscreen-requested();
     callback audio-cycle-requested();
     callback subtitle-cycle-requested();
+    callback prev-requested();
+    callback next-requested();
+    callback chip-clicked(int);
 
     callback platform-clicked(int);
     callback section-clicked(int);
@@ -217,6 +255,14 @@ export component AppWindow inherits Window {
                 }
                 if (event.text == Key.RightArrow) {
                     root.seek-requested(10);
+                    return accept;
+                }
+                if (event.text == "<" && root.can-step-prev) {
+                    root.prev-requested();
+                    return accept;
+                }
+                if (event.text == ">" && root.can-step-next) {
+                    root.next-requested();
                     return accept;
                 }
             }
@@ -349,6 +395,22 @@ export component AppWindow inherits Window {
                     overflow: elide;
                 }
 
+                if root.chips.length > 0 : ScrollView {
+                    height: 34px;
+                    content-height: 30px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        height: 30px;
+
+                        for name[i] in root.chips : Chip {
+                            label: name;
+                            active: i == root.chip-index;
+                            clicked => { root.chip-clicked(i); }
+                        }
+                    }
+                }
+
                 if !root.detail-open : ListView {
                     vertical-stretch: 1;
 
@@ -366,39 +428,19 @@ export component AppWindow inherits Window {
 
                 // Barra del reproductor (mpv corre en su propia ventana; esto controla mpv).
                 if root.playing : Rectangle {
-                    height: 66px;
+                    height: 96px;
                     background: Theme.surface;
                     border-radius: 12px;
 
-                    HorizontalLayout {
-                        padding: 12px;
-                        spacing: 8px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
 
-                        PlayButton {
-                            label: root.play-paused ? "Seguir" : "Pausa";
-                            primary: true;
-                            width: 86px;
-                            clicked => { root.toggle-pause-requested(); }
-                        }
-
-                        PlayButton {
-                            label: "−10 s";
-                            width: 64px;
-                            clicked => { root.seek-requested(-10); }
-                        }
-
-                        PlayButton {
-                            label: "+10 s";
-                            width: 64px;
-                            clicked => { root.seek-requested(10); }
-                        }
-
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            spacing: 5px;
-                            alignment: center;
+                        HorizontalLayout {
+                            spacing: 10px;
 
                             Text {
+                                horizontal-stretch: 1;
                                 text: root.play-title;
                                 color: Theme.text;
                                 font-size: 13px;
@@ -407,63 +449,99 @@ export component AppWindow inherits Window {
                                 overflow: elide;
                             }
 
-                            Rectangle {
-                                height: 6px;
-                                border-radius: 3px;
-                                background: Theme.surface-hi;
-
-                                Rectangle {
-                                    x: 0px;
-                                    width: parent.width * root.play-progress;
-                                    height: parent.height;
-                                    border-radius: 3px;
-                                    background: Theme.accent;
-                                }
-
-                                TouchArea {
-                                    x: 0px;
-                                    y: -6px;
-                                    width: parent.width;
-                                    height: parent.height + 12px;
-                                    pointer-event(event) => {
-                                        if (event.kind == PointerEventKind.down) {
-                                            root.seek-to-requested(self.mouse-x / self.width);
-                                        }
-                                    }
-                                }
-                            }
-
                             Text {
                                 text: root.play-status + "   " + root.play-time;
                                 color: Theme.muted;
                                 font-size: 11px;
                                 wrap: no-wrap;
-                                overflow: elide;
                             }
                         }
 
-                        PlayButton {
-                            label: "Idioma";
-                            width: 74px;
-                            clicked => { root.audio-cycle-requested(); }
+                        Rectangle {
+                            height: 6px;
+                            border-radius: 3px;
+                            background: Theme.surface-hi;
+
+                            Rectangle {
+                                x: 0px;
+                                width: parent.width * root.play-progress;
+                                height: parent.height;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+
+                            TouchArea {
+                                x: 0px;
+                                y: -6px;
+                                width: parent.width;
+                                height: parent.height + 12px;
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.down) {
+                                        root.seek-to-requested(self.mouse-x / self.width);
+                                    }
+                                }
+                            }
                         }
 
-                        PlayButton {
-                            label: "Subtítulos";
-                            width: 96px;
-                            clicked => { root.subtitle-cycle-requested(); }
-                        }
+                        HorizontalLayout {
+                            spacing: 6px;
 
-                        PlayButton {
-                            label: "Pantalla completa";
-                            width: 150px;
-                            clicked => { root.fullscreen-requested(); }
-                        }
+                            PlayButton {
+                                label: root.play-paused ? "Seguir" : "Pausa";
+                                primary: true;
+                                width: 74px;
+                                clicked => { root.toggle-pause-requested(); }
+                            }
 
-                        PlayButton {
-                            label: "Detener";
-                            width: 80px;
-                            clicked => { root.stop-requested(); }
+                            PlayButton {
+                                label: "−10 s";
+                                width: 58px;
+                                clicked => { root.seek-requested(-10); }
+                            }
+
+                            PlayButton {
+                                label: "+10 s";
+                                width: 58px;
+                                clicked => { root.seek-requested(10); }
+                            }
+
+                            PlayButton {
+                                label: "Anterior";
+                                width: 76px;
+                                available: root.can-step-prev;
+                                clicked => { root.prev-requested(); }
+                            }
+
+                            PlayButton {
+                                label: "Siguiente";
+                                width: 80px;
+                                available: root.can-step-next;
+                                clicked => { root.next-requested(); }
+                            }
+
+                            PlayButton {
+                                label: "Idioma";
+                                width: 62px;
+                                clicked => { root.audio-cycle-requested(); }
+                            }
+
+                            PlayButton {
+                                label: "Subs";
+                                width: 52px;
+                                clicked => { root.subtitle-cycle-requested(); }
+                            }
+
+                            PlayButton {
+                                label: "Completa";
+                                width: 76px;
+                                clicked => { root.fullscreen-requested(); }
+                            }
+
+                            PlayButton {
+                                label: "Detener";
+                                width: 68px;
+                                clicked => { root.stop-requested(); }
+                            }
                         }
                     }
                 }

@@ -2628,7 +2628,9 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "image",
+ "log",
  "media-lite-core",
+ "serde_json",
 ]
 
 [[package]]

@@ -347,19 +347,21 @@ Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Fem
 
 Portar `pluto.cpp`, `runtime.cpp`, `plex.cpp` y `providers.cpp`:
 
-- [ ] **Pluto TV**: arranque (`boot.pluto.tv`), canales en vivo por categoría con "Ahora:", guía,
-      VOD de películas y series con temporadas, búsqueda, filtro de anuncios y continuidad de clips (`SP_RETIME`:
-      primero probar si mpv ya lo maneja bien con las discontinuidades).
-- [ ] **Runtime**: canales, películas y series (`api-ott.runtime.tv`).
-- [ ] **Plex**: canales en vivo + EPG, películas y series, filtro "solo en español" con opción de
-      sumar inglés, audio aparte.
-- [ ] Ocultar todo lo que tiene DRM (igual que hoy).
-- [ ] Panel lateral al reproducir: guía y demás canales, episodios de la serie, más películas.
-- [ ] Anterior/siguiente para cambiar de canal; el idioma elegido sigue en el próximo episodio.
-- [ ] Reproducción continua con cuenta regresiva de 5 s (como Sanson), para pasar al siguiente episodio, película o canal. Viene de la Fase 2.
-- [ ] Traducir géneros (`genre_es`) y nombres de idiomas (`lang_name`).
+- [x] **Pluto TV** (`crates/providers/src/pluto.rs`): sesión de `boot.pluto.tv` con renovación (y reintento ante 401), 192 canales con categorías y «Ahora:» de la guía, 1 813 películas y 1 563 series por categoría, búsqueda, temporadas y episodios, y el stream del stitcher. Los anuncios se quitan con los patrones de Lumière (`_ad%2F`, `%2Fad%2F`, `/ad/creative`, `ad%2Fcreative`) a través del proxy. Probado contra la API real desde el CLI y desde la app.
+- [x] **Runtime** (`runtime.rs`): canales, películas y series desde `getconfiguration`; búsqueda; temporadas; MP4 de Kaltura para películas y HLS para canales. Probado contra la API real.
+- [x] **Plex** (`plex.rs`): cuenta anónima con token guardado en `plex.json` (0600); 90 canales (en español por defecto), filas de películas y series en español, búsqueda y temporadas. Probado contra la API real. La opción de incluir inglés se toma de Ajustes al arrancar (cambiarla requiere reiniciar).
+- [x] Ocultar todo lo que tiene DRM o pide suscripción (igual que Lumière).
+- [~] Panel lateral al reproducir: la grilla sigue visible con los demás canales, episodios o películas. **Falta la guía de programación (EPG)** de Pluto y Plex en el panel.
+- [x] Anterior/siguiente para cambiar de canal o episodio (botones y teclas `<` `>`). El idioma de audio elegido sigue en el próximo episodio.
+- [x] **Reproducción continua** (movido desde la Fase 2): al terminar, cuenta 5 s y pasa al siguiente de la cola. Implementado; falta probarlo con un video que termine.
+- [x] Traducir géneros (`genre_es`) y nombres de idiomas (`lang_name`).
+- [x] Filtros enchufables en el proxy: el proveedor pone sus patrones en `Source.drop`, y la calidad se limita por altura y por códec (se estima la altura por el ancho de banda cuando falta `RESOLUTION`, como en Lumière).
 
-**Terminado cuando** todo lo que muestran las capturas de `lumiere/capturas/` funcione en media-lite.
+Además, en esta fase: vista de **series** (chips de temporadas y los episodios en la grilla), chips de **categorías**, y dos pools (dos hilos de red y uno de imágenes) para que un pedido del usuario no espere a las miniaturas.
+
+**Pendiente de esta fase:** la guía (EPG) en el panel, `SP_RETIME` (primero probar si mpv maneja bien las discontinuidades de Pluto), y la pantalla de Ajustes (llega con la Fase 7).
+
+**Terminado cuando** todo lo que muestran las capturas de `lumiere/capturas/` funcione en media-lite. → Inicio, búsqueda, películas, series con episodios, canales de Runtime y de Plex, y subtítulos: sí. Guía de canales y Ajustes: no todavía.
 
 ### Fase 4: YouTube (3 semanas)
 

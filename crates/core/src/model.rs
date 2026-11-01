@@ -123,6 +123,17 @@ pub struct Item {
     pub live: bool,
     #[serde(default)]
     pub duration_secs: Option<u64>,
+    /// Sinopsis, para la pantalla de detalle.
+    #[serde(default)]
+    pub description: String,
+    /// Dato opaco que entiende solo el proveedor (ruta del stream, clave de la parte…).
+    #[serde(default)]
+    pub extra: Option<String>,
+    /// Temporada y episodio, si es un episodio.
+    #[serde(default)]
+    pub season: Option<u32>,
+    #[serde(default)]
+    pub episode: Option<u32>,
 }
 
 impl Item {
@@ -141,6 +152,10 @@ impl Item {
             thumb: None,
             live: false,
             duration_secs: None,
+            description: String::new(),
+            extra: None,
+            season: None,
+            episode: None,
         }
     }
 }
@@ -178,6 +193,17 @@ pub struct Source {
     /// Pista de audio separada (video y audio en DASH).
     #[serde(default)]
     pub audio_url: Option<String>,
+    /// Fragmentos de URL de segmentos que se quitan al reproducir (anuncios de Pluto TV, por ejemplo).
+    #[serde(default)]
+    pub drop: Vec<String>,
+}
+
+/// Una temporada de una serie, con sus episodios.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Season {
+    pub number: u32,
+    pub name: String,
+    pub episodes: Vec<Item>,
 }
 
 /// Información completa de un elemento, para la pantalla de detalle.

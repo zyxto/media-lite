@@ -11,4 +11,6 @@ pub mod store;
 pub mod thumbs;
 
 pub use error::{Error, ErrorKind, Result};
-pub use model::{Caps, Category, Details, Item, Kind, Page, Platform, Section, Shelf, Source};
+pub use model::{
+    Caps, Category, Details, Item, Kind, Page, Platform, Season, Section, Shelf, Source,
+};

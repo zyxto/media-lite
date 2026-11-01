@@ -92,10 +92,7 @@ pub fn limit_variants(text: &str, max_height: Option<u32>) -> String {
         if lines[i].starts_with("#EXT-X-STREAM-INF")
             && lines.get(i + 1).is_some_and(|l| !l.starts_with('#'))
         {
-            let height = attr(lines[i], "RESOLUTION")
-                .and_then(|r| r.split('x').nth(1))
-                .and_then(|h| h.parse::<u32>().ok())
-                .unwrap_or(0);
+            let height = variant_height(lines[i]);
             let heavy = attr(lines[i], "CODECS").is_some_and(|c| {
                 ["av01", "vp09", "vp9", "hvc1", "hev1"]
                     .iter()
@@ -143,6 +140,25 @@ pub fn limit_variants(text: &str, max_height: Option<u32>) -> String {
         }
     }
     out
+}
+
+/// Altura de una variante: la de `RESOLUTION`, o una estimación por `BANDWIDTH` si no la trae
+/// (Pluto TV no la trae). Las estimaciones son las de lumiere (`guess_height` en stream.c).
+fn variant_height(line: &str) -> u32 {
+    if let Some(h) = attr(line, "RESOLUTION")
+        .and_then(|r| r.split('x').nth(1))
+        .and_then(|h| h.parse::<u32>().ok())
+    {
+        return h;
+    }
+    match attr(line, "BANDWIDTH").and_then(|b| b.parse::<u64>().ok()) {
+        Some(bw) if bw < 800_000 => 240,
+        Some(bw) if bw < 1_300_000 => 360,
+        Some(bw) if bw < 2_000_000 => 480,
+        Some(bw) if bw < 2_800_000 => 576,
+        Some(_) => 720,
+        None => 0,
+    }
 }
 
 /// Valor de un atributo `CLAVE=valor` o `CLAVE="valor"` de una etiqueta HLS.
@@ -234,6 +250,17 @@ mod tests {
         assert!(out.contains("v3/index.m3u8"));
         assert!(!out.contains("v9/index.m3u8"), "{out}");
         assert!(!out.contains("hevc/index.m3u8"), "{out}");
+    }
+
+    #[test]
+    fn variants_without_resolution_use_bandwidth_estimate() {
+        let master = "#EXT-X-STREAM-INF:BANDWIDTH=1042180\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2294080\nmid.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=4500000\nhigh.m3u8\n";
+        let out = limit_variants(master, Some(576));
+        assert!(
+            out.contains("low.m3u8") && out.contains("mid.m3u8"),
+            "{out}"
+        );
+        assert!(!out.contains("high.m3u8"), "{out}");
     }
 
     #[test]

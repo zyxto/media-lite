@@ -23,7 +23,7 @@ use media_lite_player::Proxy;
 use media_lite_providers::registry;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use state::{App, Grid, Nav};
+use state::{App, Nav};
 
 slint::include_modules!();
 
@@ -31,7 +31,8 @@ slint::include_modules!();
 const THUMB_W: u32 = 256;
 const THUMB_H: u32 = 144;
 /// Hilos de trabajo: dos de red y uno de imágenes, pensado para dos núcleos.
-const THREADS: usize = 3;
+const NET_THREADS: usize = 2;
+const IMAGE_THREADS: usize = 1;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().filter_or("MEDIA_LITE_LOG", "warn"))
@@ -43,9 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::set_var("SLINT_BACKEND", &settings.renderer);
     }
 
-    let providers = registry();
+    let providers = registry(store.dir(), settings.plex_english);
     let thumb_dir = paths::cache_dir().join("thumbs");
-    let pool = Pool::new(THREADS, "media-lite");
+    let pool = Pool::new(NET_THREADS, "media-lite-net");
+    let images = Pool::new(IMAGE_THREADS, "media-lite-img");
     let thumbs = Arc::new(ThumbCache::new(
         http::agent(),
         Some(thumb_dir.clone()),
@@ -54,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         THUMB_H,
     ));
     let disk_budget = (settings.thumb_disk_mb as u64) << 20;
-    pool.run(move || {
+    images.run(move || {
         let _ = thumbs::prune_disk(&thumb_dir, disk_budget);
     });
 
@@ -69,13 +71,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let window = AppWindow::new()?;
     let columns = listing::columns_for(settings.window_width as f32);
-    let grid = Grid::new(columns);
+    let grid = listing::empty_grid(columns);
     window.set_rows(ModelRc::from(grid.rows.clone()));
 
     let app = Rc::new(App {
         weak: window.as_weak(),
         providers,
         pool,
+        images,
         thumbs,
         generation: Arc::new(Generation::default()),
         store,
@@ -83,6 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         nav: RefCell::new(Nav {
             platform: 0,
             section: 1,
+            category: None,
             query: None,
         }),
         proxy,
@@ -182,21 +186,30 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     }
     {
         let app = app.clone();
-        window.on_back_requested(move || listing::close_detail(&app));
+        window.on_back_requested(move || {
+            let detail_open = app.grid.borrow().detail.is_some();
+            let in_series = app.grid.borrow().series.is_some();
+            if detail_open {
+                listing::close_detail(&app);
+            } else if in_series {
+                listing::close_series(&app);
+            }
+        });
     }
     {
         let app = app.clone();
-        window.on_card_clicked(move |i| listing::show_detail(&app, i as usize));
+        window.on_card_clicked(move |i| listing::card_clicked(&app, i as usize));
     }
     {
         let app = app.clone();
         window.on_play_requested(move || {
-            let item = {
+            let (item, queue) = {
                 let grid = app.grid.borrow();
-                grid.detail.and_then(|i| grid.items.get(i).cloned())
+                let item = grid.detail.and_then(|i| grid.items.get(i).cloned());
+                (item, grid.items.clone())
             };
             if let Some(item) = item {
-                playback::request(&app, item);
+                playback::request(&app, item, queue);
             }
         });
     }
@@ -215,6 +228,18 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         let app = app.clone();
         window.on_stop_requested(move || playback::stop(&app));
+    }
+    {
+        let app = app.clone();
+        window.on_prev_requested(move || playback::step(&app, -1));
+    }
+    {
+        let app = app.clone();
+        window.on_next_requested(move || playback::step(&app, 1));
+    }
+    {
+        let app = app.clone();
+        window.on_chip_clicked(move |i| listing::chip_clicked(&app, i as usize));
     }
     {
         let app = app.clone();

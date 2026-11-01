@@ -4,7 +4,9 @@
 //!   media-lite-cli platforms
 //!   media-lite-cli list <plataforma> <sección> [--category <id>] [--cursor <c>]
 //!   media-lite-cli search <plataforma> <consulta> [--cursor <c>]
-//!   media-lite-cli details <plataforma> <id>
+//!   media-lite-cli categories <plataforma> <sección>
+//!   media-lite-cli seasons <plataforma> <id-de-la-serie>
+//!   media-lite-cli details <plataforma> <id> [--kind live|movie|series|episode]
 
 use std::process::ExitCode;
 
@@ -26,10 +28,10 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | details <plataforma> <id>";
+const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | categories <plataforma> <sección> | seasons <plataforma> <id> | details <plataforma> <id>";
 
 fn run(args: &[String]) -> Result<String, String> {
-    let providers = registry();
+    let providers = registry(&media_lite_core::paths::config_dir(), false);
     let (positional, flags) = split_flags(args);
     let cursor = flag(&flags, "--cursor");
     let category = flag(&flags, "--category");
@@ -54,10 +56,34 @@ fn run(args: &[String]) -> Result<String, String> {
                 .map_err(|e| e.to_string())?;
             to_json(&page)
         }
+        Some("categories") => {
+            let provider = provider_arg(&providers, positional.get(1))?;
+            let section = positional
+                .get(2)
+                .and_then(|s| Section::from_key(s))
+                .ok_or("sección desconocida (live, movies, series, videos, music)")?;
+            let cats = provider.categories(section).map_err(|e| e.to_string())?;
+            to_json(&cats)
+        }
+        Some("seasons") => {
+            let provider = provider_arg(&providers, positional.get(1))?;
+            let id = positional.get(2).ok_or("falta el id de la serie")?;
+            let series = Item::new(provider.platform(), Kind::Series, id.clone(), String::new());
+            let seasons = provider.seasons(&series).map_err(|e| e.to_string())?;
+            to_json(&seasons)
+        }
         Some("details") => {
             let provider = provider_arg(&providers, positional.get(1))?;
             let id = positional.get(2).ok_or("falta el id")?;
-            let item = Item::new(provider.platform(), Kind::Video, id.clone(), String::new());
+            let kind = match flag(&flags, "--kind").as_deref() {
+                Some("live") | Some("channel") => Kind::Channel,
+                Some("series") => Kind::Series,
+                Some("episode") => Kind::Episode,
+                Some("movie") => Kind::Movie,
+                _ => Kind::Video,
+            };
+            let mut item = Item::new(provider.platform(), kind, id.clone(), String::new());
+            item.live = matches!(kind, Kind::Channel);
             let details = provider.details(&item).map_err(|e| e.to_string())?;
             to_json(&details)
         }

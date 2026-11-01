@@ -3,7 +3,7 @@
 
 use base64::Engine;
 use media_lite_core::{
-    Caps, Category, Details, Error, Item, Kind, Page, Platform, Result, Section, Source,
+    Caps, Category, Details, Error, Item, Kind, Page, Platform, Result, Season, Section, Source,
 };
 
 use crate::Provider;
@@ -88,6 +88,34 @@ impl Provider for Demo {
         })
     }
 
+    fn seasons(&self, series: &Item) -> Result<Vec<Season>> {
+        if series.platform != Platform::Demo {
+            return Err(Error::unsupported());
+        }
+        let seasons = (1..=2u32)
+            .map(|number| {
+                let episodes = (1..=5u32)
+                    .map(|e| {
+                        let mut ep =
+                            make_item(Section::Series, (number as usize - 1) * 5 + e as usize);
+                        ep.kind = Kind::Episode;
+                        ep.season = Some(number);
+                        ep.episode = Some(e);
+                        ep.subtitle = format!("T{number} · E{e}");
+                        ep.title = format!("{} · Episodio {e}", series.title);
+                        ep
+                    })
+                    .collect();
+                Season {
+                    number,
+                    name: format!("Temporada {number}"),
+                    episodes,
+                }
+            })
+            .collect();
+        Ok(seasons)
+    }
+
     fn details(&self, item: &Item) -> Result<Details> {
         if item.platform != Platform::Demo {
             return Err(Error::unsupported());
@@ -101,6 +129,7 @@ impl Provider for Demo {
                 height: Some(1080),
                 live: false,
                 audio_url: None,
+                drop: Vec::new(),
             }],
         })
     }

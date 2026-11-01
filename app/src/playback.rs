@@ -1,14 +1,19 @@
-//! Reproducción: mpv en su propia ventana, controlado desde la barra de la app. El historial
-//! guarda la posición para retomar el video donde quedó, y si la imagen se traba la app vuelve a
-//! cargar el video en la misma posición, con una calidad menor.
+//! Reproducción: mpv en su propia ventana, controlado desde la barra de la app.
+//!
+//! - El historial guarda la posición para retomar el video donde quedó.
+//! - Si la imagen se traba, se vuelve a cargar en la misma posición con una calidad menor.
+//! - La cola es la lista de la que se abrió el video: anterior y siguiente recorren esa lista.
+//!   Al terminar, cuenta cinco segundos y pasa al siguiente.
+//! - El idioma de audio elegido sigue en el próximo episodio de la cola.
 
 use std::rc::Rc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use media_lite_core::history::{self, Entry};
 use media_lite_core::store::Settings;
-use media_lite_core::{Details, Item, Platform, Result, Source};
+use media_lite_core::{Details, Item, Kind, Platform, Result, Source};
 use media_lite_player::{Event, Filters, LoadOptions, Mode, Options, Player};
+use media_lite_providers::text::lang_name;
 use serde_json::Value;
 
 use crate::state::{set_status, with_app, App};
@@ -21,6 +26,8 @@ const CACHE_MB: u32 = 24;
 const STALL_LIMIT: f64 = 20.0;
 /// Entre dos recargas tiene que pasar al menos este tiempo.
 const RELOAD_COOLDOWN: f64 = 30.0;
+/// Segundos de cuenta regresiva antes del siguiente elemento de la cola.
+const NEXT_COUNTDOWN: Duration = Duration::from_secs(5);
 /// Alturas de calidad, de mayor a menor, para bajar un escalón cuando se traba.
 const QUALITY_STEPS: [u32; 5] = [1080, 720, 480, 360, 240];
 
@@ -37,6 +44,12 @@ pub struct Playback {
     pub fullscreen: bool,
     pub audio: Vec<(i64, String)>,
     pub audio_selected: Option<i64>,
+    /// Idioma de la pista de audio activa, para recordarlo en el próximo elemento.
+    pub audio_lang: Option<String>,
+    /// Idioma de audio que hay que buscar en cuanto mpv informe las pistas.
+    pub carry_audio: Option<String>,
+    /// Pista de audio que se aplica en el próximo ciclo (pendiente de `track-list`).
+    pub pending_audio: Option<i64>,
     pub subs: Vec<(i64, String)>,
     pub sub_selected: Option<i64>,
     /// Posición de la última vez que se guardó en el historial.
@@ -49,10 +62,23 @@ pub struct Playback {
     pub stall_since: Option<Instant>,
     /// Última recarga por traba.
     pub last_reload: Option<Instant>,
+    /// Lista de la que se abrió el video.
+    pub queue: Vec<Item>,
+    pub queue_index: usize,
+    /// Terminó el video: la cuenta regresiva para el siguiente elemento corre desde aquí.
+    pub countdown: Option<Instant>,
 }
 
 impl Playback {
-    fn new(item: &Item, position: f64, source: &Source, max_height: u32) -> Playback {
+    fn new(
+        item: &Item,
+        position: f64,
+        source: &Source,
+        max_height: u32,
+        queue: Vec<Item>,
+        index: usize,
+        carry: Option<String>,
+    ) -> Playback {
         Playback {
             platform: item.platform,
             id: item.id.clone(),
@@ -64,6 +90,9 @@ impl Playback {
             fullscreen: false,
             audio: Vec::new(),
             audio_selected: None,
+            audio_lang: None,
+            carry_audio: carry,
+            pending_audio: None,
             subs: Vec::new(),
             sub_selected: None,
             saved_at: position,
@@ -71,12 +100,37 @@ impl Playback {
             max_height,
             stall_since: None,
             last_reload: None,
+            queue,
+            queue_index: index,
+            countdown: None,
         }
     }
 }
 
+/// Un elemento que se puede reproducir (las series no: se abren para ver sus episodios).
+fn playable(item: &Item) -> bool {
+    item.kind != Kind::Series
+}
+
+/// Índice del siguiente (`delta` = 1) o anterior (`delta` = -1) elemento reproducible de la cola.
+pub fn neighbor(queue: &[Item], from: usize, delta: i64) -> Option<usize> {
+    let mut i = from as i64 + delta;
+    while i >= 0 && (i as usize) < queue.len() {
+        if playable(&queue[i as usize]) {
+            return Some(i as usize);
+        }
+        i += delta;
+    }
+    None
+}
+
 /// Pide los detalles del elemento (en un hilo de trabajo) y arranca su mejor fuente.
-pub fn request(app: &Rc<App>, item: Item) {
+/// `queue` es la lista de la que viene el elemento; vacía si no hay lista.
+pub fn request(app: &Rc<App>, item: Item, queue: Vec<Item>) {
+    request_with(app, item, queue, None);
+}
+
+fn request_with(app: &Rc<App>, item: Item, queue: Vec<Item>, carry: Option<String>) {
     let Some(provider) = app
         .providers
         .iter()
@@ -85,21 +139,40 @@ pub fn request(app: &Rc<App>, item: Item) {
     else {
         return;
     };
+    let queue = if queue
+        .iter()
+        .any(|q| q.id == item.id && q.platform == item.platform)
+    {
+        queue
+    } else {
+        vec![item.clone()]
+    };
+    let index = queue
+        .iter()
+        .position(|q| q.id == item.id && q.platform == item.platform)
+        .unwrap_or(0);
     set_status(app, "Preparando reproducción…");
     app.pool.run(move || {
         let result = provider.details(&item);
         let _ = slint::invoke_from_event_loop(move || {
-            with_app(|app| begin(app, item, result));
+            with_app(|app| begin(app, item, result, queue, index, carry));
         });
     });
 }
 
-fn begin(app: &Rc<App>, item: Item, result: Result<Details>) {
+fn begin(
+    app: &Rc<App>,
+    item: Item,
+    result: Result<Details>,
+    queue: Vec<Item>,
+    index: usize,
+    carry: Option<String>,
+) {
     match result {
         Ok(details) => {
             let quality = app.settings.borrow().quality;
             match choose_source(&details.sources, quality) {
-                Some(source) => start(app, &item, &source),
+                Some(source) => start(app, &item, &source, queue, index, carry),
                 None => set_status(app, "Este título no tiene fuentes reproducibles todavía."),
             }
         }
@@ -114,14 +187,21 @@ fn url_for(app: &App, source: &Source, max_height: u32) -> String {
             &source.url,
             &Filters {
                 max_height: Some(max_height),
-                drop: Vec::new(),
+                drop: source.drop.clone(),
             },
         ),
         _ => source.url.clone(),
     }
 }
 
-fn start(app: &Rc<App>, item: &Item, source: &Source) {
+fn start(
+    app: &Rc<App>,
+    item: &Item,
+    source: &Source,
+    queue: Vec<Item>,
+    index: usize,
+    carry: Option<String>,
+) {
     let quality = app.settings.borrow().quality;
     let url = url_for(app, source, quality);
 
@@ -149,8 +229,16 @@ fn start(app: &Rc<App>, item: &Item, source: &Source) {
     };
     match loaded {
         Ok(()) => {
-            *app.playback.borrow_mut() =
-                Some(Playback::new(item, resume.unwrap_or(0.0), source, quality));
+            let pb = Playback::new(
+                item,
+                resume.unwrap_or(0.0),
+                source,
+                quality,
+                queue,
+                index,
+                carry,
+            );
+            *app.playback.borrow_mut() = Some(pb);
             set_status(app, format!("Reproduciendo «{}»", item.title));
             sync_ui(app);
         }
@@ -158,7 +246,28 @@ fn start(app: &Rc<App>, item: &Item, source: &Source) {
     }
 }
 
-/// Lo llama un temporizador de la interfaz: lee los eventos de mpv, revisa si se trabó y refresca la barra.
+/// Pasa al elemento anterior (`delta` -1) o siguiente (+1) de la cola, con el idioma de audio actual.
+pub fn step(app: &Rc<App>, delta: i64) {
+    let target = {
+        let guard = app.playback.borrow();
+        let Some(pb) = guard.as_ref() else {
+            return;
+        };
+        neighbor(&pb.queue, pb.queue_index, delta).map(|i| {
+            (
+                pb.queue[i].clone(),
+                pb.queue.clone(),
+                i,
+                pb.audio_lang.clone(),
+            )
+        })
+    };
+    if let Some((item, queue, _, lang)) = target {
+        request_with(app, item, queue, lang);
+    }
+}
+
+/// Lo llama un temporizador de la interfaz: lee los eventos de mpv, revisa trabas y cuentas, y refresca la barra.
 pub fn pump(app: &Rc<App>) {
     let events: Vec<Event> = match app.player.borrow().as_ref() {
         Some(player) => player.events().try_iter().collect(),
@@ -167,9 +276,34 @@ pub fn pump(app: &Rc<App>) {
     for event in events {
         apply(app, event);
     }
+    apply_pending_audio(app);
     check_stall(app);
     maybe_save(app, false);
+    let countdown_done = {
+        let guard = app.playback.borrow();
+        guard
+            .as_ref()
+            .and_then(|pb| pb.countdown)
+            .is_some_and(|t| t.elapsed() >= NEXT_COUNTDOWN)
+    };
+    if countdown_done {
+        step(app, 1);
+    }
     sync_ui(app);
+}
+
+/// Aplica la pista de audio que había que buscar (la del idioma elegido en el episodio anterior).
+fn apply_pending_audio(app: &Rc<App>) {
+    let pending = app
+        .playback
+        .borrow_mut()
+        .as_mut()
+        .and_then(|pb| pb.pending_audio.take());
+    if let Some(id) = pending {
+        if let Some(player) = app.player.borrow().as_ref() {
+            let _ = player.set_audio_track(Some(id));
+        }
+    }
 }
 
 fn apply(app: &Rc<App>, event: Event) {
@@ -196,6 +330,18 @@ fn apply(app: &Rc<App>, event: Event) {
                 "track-list" => {
                     let (audio, audio_selected) = tracks(&value, "audio");
                     let (subs, sub_selected) = tracks(&value, "sub");
+                    pb.audio_lang = selected_lang(&value, "audio");
+                    if let Some(wanted) = pb.carry_audio.take() {
+                        if let Some(id) = audio
+                            .iter()
+                            .find(|(_, label)| label_lang(label) == wanted)
+                            .map(|(id, _)| *id)
+                        {
+                            if Some(id) != audio_selected {
+                                pb.pending_audio = Some(id);
+                            }
+                        }
+                    }
                     pb.audio = audio;
                     pb.audio_selected = audio_selected;
                     pb.subs = subs;
@@ -212,7 +358,7 @@ fn apply(app: &Rc<App>, event: Event) {
         }
         Event::EndFile { reason } => match reason.as_str() {
             // Un cambio de archivo (`loadfile replace`) también avisa `stop`: no es el fin.
-            "eof" => finish(app, true),
+            "eof" => on_eof(app),
             "error" => {
                 set_status(app, "Se cortó la reproducción.");
                 finish(app, false);
@@ -220,6 +366,25 @@ fn apply(app: &Rc<App>, event: Event) {
             "quit" => finish(app, false),
             _ => {}
         },
+    }
+}
+
+/// Terminó el video: se guarda como visto. Si hay siguiente en la cola, empieza la cuenta regresiva.
+fn on_eof(app: &Rc<App>) {
+    maybe_save(app, true);
+    let has_next = {
+        let mut guard = app.playback.borrow_mut();
+        let Some(pb) = guard.as_mut() else {
+            return;
+        };
+        let next = neighbor(&pb.queue, pb.queue_index, 1).is_some();
+        if next {
+            pb.countdown = Some(Instant::now());
+        }
+        next
+    };
+    if !has_next {
+        finish(app, true);
     }
 }
 
@@ -237,7 +402,7 @@ fn check_stall(app: &Rc<App>) {
         let cooled = pb
             .last_reload
             .is_none_or(|t| t.elapsed().as_secs_f64() >= RELOAD_COOLDOWN);
-        if !(stalled && cooled) {
+        if !(stalled && cooled) || pb.countdown.is_some() {
             return;
         }
         (pb.source.clone(), pb.position, lower_quality(pb.max_height))
@@ -313,7 +478,7 @@ fn maybe_save(app: &Rc<App>, force: bool) {
     }
 }
 
-/// Pausa o sigue.
+/// Pausa o sigue. Si había una cuenta regresiva, también la cancela.
 pub fn toggle_pause(app: &Rc<App>) {
     let paused = match app.playback.borrow().as_ref() {
         Some(pb) => pb.paused,
@@ -324,6 +489,7 @@ pub fn toggle_pause(app: &Rc<App>) {
     }
     if let Some(pb) = app.playback.borrow_mut().as_mut() {
         pb.paused = !paused;
+        pb.countdown = None;
     }
     sync_ui(app);
 }
@@ -366,7 +532,7 @@ pub fn toggle_fullscreen(app: &Rc<App>) {
     }
 }
 
-/// Pasa a la siguiente pista de audio.
+/// Pasa a la siguiente pista de audio. Recuerda su idioma para el próximo episodio.
 pub fn cycle_audio(app: &Rc<App>) {
     let next = match app.playback.borrow().as_ref() {
         Some(pb) if !pb.audio.is_empty() => {
@@ -377,6 +543,14 @@ pub fn cycle_audio(app: &Rc<App>) {
     };
     if let (Some(id), Some(player)) = (next, app.player.borrow().as_ref()) {
         let _ = player.set_audio_track(Some(id));
+    }
+    if let (Some(id), Some(pb)) = (next, app.playback.borrow_mut().as_mut()) {
+        pb.audio_selected = Some(id);
+        pb.audio_lang = pb
+            .audio
+            .iter()
+            .find(|t| t.0 == id)
+            .map(|t| label_lang(&t.1));
     }
 }
 
@@ -427,18 +601,23 @@ pub fn sync_ui(app: &Rc<App>) {
             };
             window.set_play_progress(progress as f32);
             window.set_play_paused(pb.paused);
-            let status = if pb.buffering {
-                "Cargando…"
-            } else if pb.paused {
-                "En pausa"
-            } else {
-                "Reproduciendo"
+            window.set_can_step_prev(neighbor(&pb.queue, pb.queue_index, -1).is_some());
+            window.set_can_step_next(neighbor(&pb.queue, pb.queue_index, 1).is_some());
+            let status = match pb.countdown {
+                Some(since) => {
+                    let left = NEXT_COUNTDOWN
+                        .saturating_sub(since.elapsed())
+                        .as_secs_f32()
+                        .ceil() as u32;
+                    format!("Siguiente en {left} s")
+                }
+                None if pb.buffering => "Cargando…".to_string(),
+                None if pb.paused => "En pausa".to_string(),
+                None => "Reproduciendo".to_string(),
             };
             window.set_play_status(status.into());
         }
-        None => {
-            window.set_playing(false);
-        }
+        None => window.set_playing(false),
     }
 }
 
@@ -482,11 +661,11 @@ fn tracks(list: &Value, kind: &str) -> (Vec<(i64, String)>, Option<i64>) {
         };
         let lang = track.get("lang").and_then(Value::as_str).unwrap_or("");
         let title = track.get("title").and_then(Value::as_str).unwrap_or("");
-        let label = match (lang, title) {
-            ("", "") => format!("Pista {id}"),
-            (l, "") => l.to_string(),
-            ("", t) => t.to_string(),
-            (l, t) => format!("{l} · {t}"),
+        let name = lang_name(lang, title);
+        let label = if title.is_empty() || title == name {
+            name
+        } else {
+            format!("{name} · {title}")
         };
         if track.get("selected").and_then(Value::as_bool) == Some(true) {
             selected = Some(id);
@@ -494,6 +673,26 @@ fn tracks(list: &Value, kind: &str) -> (Vec<(i64, String)>, Option<i64>) {
         out.push((id, label));
     }
     (out, selected)
+}
+
+/// Idioma de una etiqueta de pista (`es · Comentario` → `es`).
+fn label_lang(label: &str) -> String {
+    label.split(" · ").next().unwrap_or(label).to_string()
+}
+
+/// Idioma (con el nombre en español) de la pista activa de un tipo, según la lista de mpv.
+fn selected_lang(list: &Value, kind: &str) -> Option<String> {
+    list.as_array()?
+        .iter()
+        .find(|t| {
+            t.get("type").and_then(Value::as_str) == Some(kind)
+                && t.get("selected").and_then(Value::as_bool) == Some(true)
+        })
+        .map(|t| {
+            let lang = t.get("lang").and_then(Value::as_str).unwrap_or("");
+            let title = t.get("title").and_then(Value::as_str).unwrap_or("");
+            lang_name(lang, title)
+        })
 }
 
 /// `m:ss` o `h:mm:ss`.
@@ -525,6 +724,7 @@ mod tests {
             height,
             live: false,
             audio_url: None,
+            drop: Vec::new(),
         }
     }
 
@@ -584,7 +784,7 @@ mod tests {
         let (audio, selected) = tracks(&list, "audio");
         assert_eq!(
             audio,
-            vec![(2, "es".to_string()), (3, "Comentario".to_string())]
+            vec![(2, "Español".to_string()), (3, "Comentario".to_string())]
         );
         assert_eq!(selected, Some(2));
     }
