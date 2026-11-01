@@ -157,6 +157,12 @@ impl Player {
         &self.events
     }
 
+    /// `false` si mpv ya se cerró (por ejemplo, desde su ventana). Ese `Player` no sirve más:
+    /// hay que lanzar otro.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
     /// Carga un archivo o URL, reemplazando lo que se estaba viendo.
     pub fn load(&self, url: &str, options: &LoadOptions) -> std::io::Result<()> {
         let mut per_file = serde_json::Map::new();

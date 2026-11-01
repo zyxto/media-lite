@@ -208,6 +208,17 @@ fn start(
     let quality = app.settings.borrow().quality;
     let url = url_for(app, source, quality);
 
+    // mpv se puede cerrar desde su ventana: si el proceso guardado ya no existe, se descarta
+    // (antes de lanzar otro) y se lanza uno nuevo.
+    let running = app
+        .player
+        .borrow_mut()
+        .as_mut()
+        .is_some_and(|player| player.is_running());
+    if !running {
+        *app.player.borrow_mut() = None;
+    }
+
     if app.player.borrow().is_none() {
         let options = options_for(&app.settings.borrow());
         match Player::spawn(&options) {
