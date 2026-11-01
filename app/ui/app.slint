@@ -109,6 +109,33 @@ component CardView inherits Rectangle {
     }
 }
 
+component PlayButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 8px;
+    background: root.primary ? Theme.accent : Theme.surface-hi;
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.primary ? #ffffff : Theme.text;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "media-lite";
     background: Theme.bg;
@@ -130,6 +157,21 @@ export component AppWindow inherits Window {
     in property <string> detail-title;
     in property <string> detail-subtitle;
     in property <string> detail-text;
+    in property <bool> playing;
+    in property <string> play-title;
+    in property <string> play-time;
+    in property <float> play-progress;
+    in property <bool> play-paused;
+    in property <string> play-status;
+
+    callback play-requested();
+    callback toggle-pause-requested();
+    callback seek-requested(float);
+    callback seek-to-requested(float);
+    callback stop-requested();
+    callback fullscreen-requested();
+    callback audio-cycle-requested();
+    callback subtitle-cycle-requested();
 
     callback platform-clicked(int);
     callback section-clicked(int);
@@ -162,6 +204,21 @@ export component AppWindow inherits Window {
             if ((event.text == Key.Escape || event.text == Key.Backspace) && root.detail-open) {
                 root.back-requested();
                 return accept;
+            }
+            // Controles del video: solo si el foco no está en el buscador.
+            if (root.playing && !search.has-focus) {
+                if (event.text == " ") {
+                    root.toggle-pause-requested();
+                    return accept;
+                }
+                if (event.text == Key.LeftArrow) {
+                    root.seek-requested(-10);
+                    return accept;
+                }
+                if (event.text == Key.RightArrow) {
+                    root.seek-requested(10);
+                    return accept;
+                }
             }
             return reject;
         }
@@ -307,6 +364,110 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // Barra del reproductor (mpv corre en su propia ventana; esto controla mpv).
+                if root.playing : Rectangle {
+                    height: 66px;
+                    background: Theme.surface;
+                    border-radius: 12px;
+
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        PlayButton {
+                            label: root.play-paused ? "Seguir" : "Pausa";
+                            primary: true;
+                            width: 86px;
+                            clicked => { root.toggle-pause-requested(); }
+                        }
+
+                        PlayButton {
+                            label: "−10 s";
+                            width: 64px;
+                            clicked => { root.seek-requested(-10); }
+                        }
+
+                        PlayButton {
+                            label: "+10 s";
+                            width: 64px;
+                            clicked => { root.seek-requested(10); }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 5px;
+                            alignment: center;
+
+                            Text {
+                                text: root.play-title;
+                                color: Theme.text;
+                                font-size: 13px;
+                                font-weight: 600;
+                                wrap: no-wrap;
+                                overflow: elide;
+                            }
+
+                            Rectangle {
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.surface-hi;
+
+                                Rectangle {
+                                    x: 0px;
+                                    width: parent.width * root.play-progress;
+                                    height: parent.height;
+                                    border-radius: 3px;
+                                    background: Theme.accent;
+                                }
+
+                                TouchArea {
+                                    x: 0px;
+                                    y: -6px;
+                                    width: parent.width;
+                                    height: parent.height + 12px;
+                                    pointer-event(event) => {
+                                        if (event.kind == PointerEventKind.down) {
+                                            root.seek-to-requested(self.mouse-x / self.width);
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.play-status + "   " + root.play-time;
+                                color: Theme.muted;
+                                font-size: 11px;
+                                wrap: no-wrap;
+                                overflow: elide;
+                            }
+                        }
+
+                        PlayButton {
+                            label: "Idioma";
+                            width: 74px;
+                            clicked => { root.audio-cycle-requested(); }
+                        }
+
+                        PlayButton {
+                            label: "Subtítulos";
+                            width: 96px;
+                            clicked => { root.subtitle-cycle-requested(); }
+                        }
+
+                        PlayButton {
+                            label: "Pantalla completa";
+                            width: 150px;
+                            clicked => { root.fullscreen-requested(); }
+                        }
+
+                        PlayButton {
+                            label: "Detener";
+                            width: 80px;
+                            clicked => { root.stop-requested(); }
+                        }
+                    }
+                }
+
                 if root.detail-open : Rectangle {
                     vertical-stretch: 1;
                     background: Theme.surface;
@@ -350,6 +511,13 @@ export component AppWindow inherits Window {
                             text: root.detail-subtitle;
                             color: Theme.muted;
                             font-size: 14px;
+                        }
+
+                        PlayButton {
+                            label: "Reproducir";
+                            primary: true;
+                            width: 150px;
+                            clicked => { root.play-requested(); }
                         }
 
                         Text {

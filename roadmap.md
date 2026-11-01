@@ -328,19 +328,20 @@ Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Fem
 
 ### Fase 2: Reproductor (1 semana)
 
-- [ ] `player`: lanzar mpv, conectarse por IPC, `observe_property` de `time-pos`, `duration`,
-      `pause`, `eof-reached`, `track-list`, `demuxer-cache-state`, `video-params`.
-- [ ] Modo **ventana flotante** (PiP) y modo **solo audio**.
-- [ ] Barra de controles en la app: pausa, barra de avance, ±10 s, volumen, pantalla completa,
-      calidad, botón **Idioma** (audio y subtítulos con `track-list`, `aid`, `sid`, `sub-add`).
-- [ ] `input.conf` con la tabla de teclas de las referencias (`<`/`>`/`n` anterior/siguiente: mpv
-      se lo avisa a la app con `script-message`).
-- [ ] Retomar donde quedó (`start=`), con la posición guardada cada 10 s y al cerrar.
-- [ ] Reproducción continua con la cuenta regresiva de 5 s (como Sanson), sin mezclar shorts con videos.
-- [ ] Si se traba, se reconecta solo, y si vuelve a pasar enseguida, baja una calidad (`demuxer-cache-state` + temporizador).
-- [ ] Proxy de playlists `.m3u8` en `127.0.0.1` (puerto aleatorio) con filtros enchufables: `skip_twitch_ads`, `skip_pluto_ads`.
+- [x] `player`: lanza mpv, se conecta por IPC y observa `time-pos`, `duration`, `pause`, `volume`, `track-list`, `core-idle`, `paused-for-cache` y `fullscreen`. (`demuxer-cache-state` queda para más adelante: `paused-for-cache` alcanza para detectar trabas.)
+- [x] Modo **ventana flotante** (PiP: `--ontop --no-border --geometry=480x270-16-16`). El modo solo audio existe en `player` (`Mode::AudioOnly`) y se usa en la Fase 6.
+- [~] Barra de controles: pausa, barra de avance (un clic salta), ±10 s, pantalla completa, **Idioma** (cicla pistas de audio) y **Subtítulos** hechos. Pendiente: control de volumen en la barra y selector de calidad durante la reproducción (la calidad hoy se elige en Ajustes).
+- [~] Teclas: espacio (pausa), flechas (±10 s) desde la app, y las de mpv por defecto en la ventana de video. Falta un `input.conf` propio con la tabla de mplayer (teclas `9/0`, `w/e/d/D`, `s/S`…): va con el empaquetado (Fase 9).
+- [x] Retomar donde quedó: posición guardada cada 10 s y al cerrar, en `history.json`; al volver a abrir el video se usa `start=`.
+- [ ] Reproducción continua con cuenta regresiva de 5 s y sin mezclar shorts con videos. **Movido a la Fase 3**: necesita una lista de "siguientes" (episodios, canales, videos) que recién existe con los proveedores de TV.
+- [x] Si la imagen se traba más de 20 s, mpv se vuelve a cargar en la misma posición con una calidad menor (1080 → 720 → 480 → 360 → 240), y como mucho cada 30 s. Implementado; falta probarlo con una red lenta de verdad.
+- [x] Proxy de playlists `.m3u8` en `127.0.0.1`, con puerto libre y token aleatorio en la ruta. Filtra variantes por altura (la calidad elegida) y por códec (se descartan AV1, VP9 y HEVC, que el T4500 no decodifica), y quita segmentos que coincidan con patrones de anuncios. Los filtros concretos de Pluto y Twitch llegan en las Fases 3 y 5.
 
-**Terminado cuando** una URL HLS y un par video+audio separados se puedan ver en ventana flotante, controlados desde la app.
+**Medido (entorno de desarrollo, no la T4500):**
+- Prueba de punta a punta con mpv sin pantalla (`vo=null`) y el HLS público de prueba a través del proxy: `time-pos` avanza. Prueba en `crates/player/tests/playback.rs` (`cargo test -- --ignored`, necesita red).
+- Con el app abriendo el primer video: mpv con variantes de 1080p usaba **468 MB**. Con el límite de 480p bajó a **194 MB**. El objetivo de app + mpv a 480p es < 220 MB; con el app en release (~40 MB) quedan ~235 MB, así que hay que bajarlo: pendiente de medir en la T4500 y de probar `--vd-lavc-threads=1` y `--cache-secs`.
+
+**Terminado cuando** una URL HLS y un par video+audio separados se puedan ver en ventana flotante, controlados desde la app. → HLS: sí. Par video+audio separado (`audio-add`): implementado, sin prueba todavía.
 
 ### Fase 3: TV gratis, migrar Lumière (1–2 semanas)
 
@@ -355,6 +356,7 @@ Portar `pluto.cpp`, `runtime.cpp`, `plex.cpp` y `providers.cpp`:
 - [ ] Ocultar todo lo que tiene DRM (igual que hoy).
 - [ ] Panel lateral al reproducir: guía y demás canales, episodios de la serie, más películas.
 - [ ] Anterior/siguiente para cambiar de canal; el idioma elegido sigue en el próximo episodio.
+- [ ] Reproducción continua con cuenta regresiva de 5 s (como Sanson), para pasar al siguiente episodio, película o canal. Viene de la Fase 2.
 - [ ] Traducir géneros (`genre_es`) y nombres de idiomas (`lang_name`).
 
 **Terminado cuando** todo lo que muestran las capturas de `lumiere/capturas/` funcione en media-lite.

@@ -2,6 +2,7 @@
 //! HTTP y caché de miniaturas. No sabe nada de plataformas ni de la interfaz.
 
 pub mod error;
+pub mod history;
 pub mod http;
 pub mod model;
 pub mod paths;

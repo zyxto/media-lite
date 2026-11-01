@@ -2576,7 +2576,9 @@ dependencies = [
  "fontique",
  "log",
  "media-lite-core",
+ "media-lite-player",
  "media-lite-providers",
+ "serde_json",
  "slint",
  "slint-build",
 ]
@@ -2605,6 +2607,19 @@ dependencies = [
  "sha2",
  "toml",
  "ureq",
+]
+
+[[package]]
+name = "media-lite-player"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "crossbeam-channel",
+ "log",
+ "media-lite-core",
+ "serde_json",
+ "ureq",
+ "url",
 ]
 
 [[package]]

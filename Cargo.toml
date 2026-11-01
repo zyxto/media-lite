@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/providers",
+    "crates/player",
     "crates/cli",
     "app",
 ]
@@ -17,6 +18,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 media-lite-core = { path = "crates/core" }
 media-lite-providers = { path = "crates/providers" }
+media-lite-player = { path = "crates/player" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
@@ -27,6 +29,7 @@ lru = "0.19"
 sha2 = "0.11"
 base64 = "0.23"
 log = "0.4"
+url = "2.5"
 env_logger = "0.11"
 
 # Compilación pensada para el Pentium T4500: sin target-cpu=native ni x86-64-v2 (ver roadmap 2.8).

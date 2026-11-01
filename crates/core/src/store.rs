@@ -24,6 +24,10 @@ pub struct Settings {
     pub quality: u32,
     /// Video liviano: menos cuadros por segundo para equipos lentos.
     pub low_video: bool,
+    /// Salida de video de mpv: `xv` (liviana en GMA 4500) o `gpu`.
+    pub vo: String,
+    /// Decodificación por hardware de mpv: `no` (por defecto) o `auto-safe`.
+    pub hwdec: String,
     /// Plex: mostrar también lo que está en inglés.
     pub plex_english: bool,
     /// Tope de la caché de miniaturas en memoria, en MB.
@@ -43,6 +47,8 @@ impl Default for Settings {
             window_y: None,
             quality: 480,
             low_video: false,
+            vo: "xv".to_string(),
+            hwdec: "no".to_string(),
             plex_english: false,
             thumb_mem_mb: 24,
             thumb_disk_mb: 64,

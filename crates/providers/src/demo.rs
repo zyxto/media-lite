@@ -3,7 +3,7 @@
 
 use base64::Engine;
 use media_lite_core::{
-    Caps, Category, Details, Error, Item, Kind, Page, Platform, Result, Section,
+    Caps, Category, Details, Error, Item, Kind, Page, Platform, Result, Section, Source,
 };
 
 use crate::Provider;
@@ -12,6 +12,8 @@ use crate::Provider;
 const TOTAL: usize = 200;
 /// Tamaño de página, igual que en las plataformas reales.
 const PAGE: usize = 60;
+/// Stream HLS público de muestra (Apple, con variantes H.264 y audio).
+const DEMO_STREAM: &str = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
 
 pub struct Demo;
 
@@ -92,8 +94,14 @@ impl Provider for Demo {
         }
         Ok(Details {
             item: item.clone(),
-            description: "Elemento de prueba: no tiene reproducción real.".to_string(),
-            sources: Vec::new(),
+            description: "Elemento de prueba. Reproduce un stream HLS público de Apple, para probar el reproductor.".to_string(),
+            sources: vec![Source {
+                url: DEMO_STREAM.to_string(),
+                label: "HLS adaptativo (prueba)".to_string(),
+                height: Some(1080),
+                live: false,
+                audio_url: None,
+            }],
         })
     }
 }
