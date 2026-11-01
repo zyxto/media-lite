@@ -1,0 +1,205 @@
+//! Modelo común a todas las plataformas: lo que devuelven los proveedores y lo que muestra la interfaz.
+
+use serde::{Deserialize, Serialize};
+
+/// Plataformas conocidas. El orden es el de la barra lateral.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Platform {
+    Pluto,
+    Runtime,
+    Plex,
+    Demo,
+}
+
+impl Platform {
+    pub const ALL: [Platform; 4] = [
+        Platform::Pluto,
+        Platform::Runtime,
+        Platform::Plex,
+        Platform::Demo,
+    ];
+
+    /// Clave estable para CLI, configuración y caché.
+    pub fn key(self) -> &'static str {
+        match self {
+            Platform::Pluto => "pluto",
+            Platform::Runtime => "runtime",
+            Platform::Plex => "plex",
+            Platform::Demo => "demo",
+        }
+    }
+
+    /// Nombre para mostrar.
+    pub fn label(self) -> &'static str {
+        match self {
+            Platform::Pluto => "Pluto TV",
+            Platform::Runtime => "Runtime",
+            Platform::Plex => "Plex",
+            Platform::Demo => "Demo",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Platform> {
+        Platform::ALL.into_iter().find(|p| p.key() == key)
+    }
+}
+
+/// Secciones de una plataforma (las pestañas de la barra lateral).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Section {
+    Live,
+    Movies,
+    Series,
+    Videos,
+    Music,
+}
+
+impl Section {
+    pub const ALL: [Section; 5] = [
+        Section::Live,
+        Section::Movies,
+        Section::Series,
+        Section::Videos,
+        Section::Music,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Section::Live => "live",
+            Section::Movies => "movies",
+            Section::Series => "series",
+            Section::Videos => "videos",
+            Section::Music => "music",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Section::Live => "En vivo",
+            Section::Movies => "Películas",
+            Section::Series => "Series",
+            Section::Videos => "Videos",
+            Section::Music => "Música",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Section> {
+        Section::ALL.into_iter().find(|s| s.key() == key)
+    }
+}
+
+/// Qué es cada elemento de una lista.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Channel,
+    Movie,
+    Series,
+    Episode,
+    Video,
+    Short,
+    Live,
+    Track,
+    Album,
+    Artist,
+}
+
+/// Un elemento de cualquier lista: tarjeta de canal, película, video, canción…
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Item {
+    pub platform: Platform,
+    pub kind: Kind,
+    /// Identificador que entiende el proveedor (ID de canal, de video, de título…).
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    /// URL `http(s)://`, `file://` o `data:` de la miniatura.
+    #[serde(default)]
+    pub thumb: Option<String>,
+    #[serde(default)]
+    pub live: bool,
+    #[serde(default)]
+    pub duration_secs: Option<u64>,
+}
+
+impl Item {
+    pub fn new(
+        platform: Platform,
+        kind: Kind,
+        id: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Item {
+        Item {
+            platform,
+            kind,
+            id: id.into(),
+            title: title.into(),
+            subtitle: String::new(),
+            thumb: None,
+            live: false,
+            duration_secs: None,
+        }
+    }
+}
+
+/// Una página de resultados. `next` es un cursor opaco para pedir la siguiente.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Page {
+    pub items: Vec<Item>,
+    pub next: Option<String>,
+}
+
+/// Una fila de la portada ("Seguir viendo", "Recomendados"…).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Shelf {
+    pub title: String,
+    pub items: Vec<Item>,
+}
+
+/// Subcategoría de una sección (Acción, Comedia, Noticias…).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Category {
+    pub id: String,
+    pub title: String,
+}
+
+/// Una fuente reproducible: una URL con su calidad y, si hace falta, cabeceras.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Source {
+    pub url: String,
+    pub label: String,
+    #[serde(default)]
+    pub height: Option<u32>,
+    #[serde(default)]
+    pub live: bool,
+    /// Pista de audio separada (video y audio en DASH).
+    #[serde(default)]
+    pub audio_url: Option<String>,
+}
+
+/// Información completa de un elemento, para la pantalla de detalle.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Details {
+    pub item: Item,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub sources: Vec<Source>,
+}
+
+/// Lo que soporta una plataforma. Se usa para mostrar u ocultar botones.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Caps {
+    pub live: bool,
+    pub movies: bool,
+    pub series: bool,
+    pub videos: bool,
+    pub music: bool,
+    pub search: bool,
+    pub guide: bool,
+    pub chat: bool,
+    pub login: bool,
+}

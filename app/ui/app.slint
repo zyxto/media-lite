@@ -1,0 +1,370 @@
+// Interfaz de media-lite. Todo el estado vive en Rust; acá solo se dibuja y se avisan los clics.
+// GPL-3.0-or-later.
+
+import { ListView } from "std-widgets.slint";
+// Inter (SIL OFL 1.1, ver app/assets/fonts/OFL.txt): Slint las embebe en el binario.
+import "../assets/fonts/Inter-Regular.ttf";
+import "../assets/fonts/Inter-SemiBold.ttf";
+
+export global Theme {
+    in-out property <bool> dark: true;
+    out property <color> bg: dark ? #0f1115 : #f2f3f6;
+    out property <color> side: dark ? #14171d : #e4e7ee;
+    out property <color> surface: dark ? #1b1f28 : #ffffff;
+    out property <color> surface-hi: dark ? #272d39 : #d9dde7;
+    out property <color> text: dark ? #e9ebf1 : #15171c;
+    out property <color> muted: dark ? #8d95a7 : #5a6273;
+    out property <color> accent: #7c9cff;
+    out property <length> radius: 10px;
+}
+
+export struct CardData {
+    title: string,
+    subtitle: string,
+    thumb: image,
+    has-thumb: bool,
+    index: int,
+}
+
+export struct RowData {
+    cards: [CardData],
+}
+
+component NavButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 8px;
+    background: root.active ? Theme.surface-hi : transparent;
+
+    Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.label;
+        color: root.active ? Theme.text : Theme.muted;
+        font-size: 14px;
+        font-weight: root.active ? 600 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component CardView inherits Rectangle {
+    in property <CardData> data;
+    in property <length> card-width;
+    callback activated();
+
+    width: root.card-width;
+    height: root.card-width * 9 / 16 + 48px;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        Rectangle {
+            height: root.card-width * 9 / 16;
+            border-radius: Theme.radius;
+            clip: true;
+            background: Theme.surface-hi;
+
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.data.thumb;
+                image-fit: cover;
+                visible: root.data.has-thumb;
+            }
+        }
+
+        Text {
+            text: root.data.title;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 600;
+            wrap: no-wrap;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.data.subtitle;
+            color: Theme.muted;
+            font-size: 11px;
+            wrap: no-wrap;
+            overflow: elide;
+        }
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.activated(); }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "media-lite";
+    background: Theme.bg;
+    default-font-family: "Inter";
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    min-width: 720px;
+    min-height: 460px;
+
+    in property <[string]> platforms;
+    in property <int> platform-index: 0;
+    in property <[string]> sections;
+    in property <int> section-index: 1;
+    in property <[RowData]> rows;
+    in property <int> columns: 4;
+    in property <string> status;
+    in property <bool> busy;
+    in property <bool> detail-open;
+    in property <string> detail-title;
+    in property <string> detail-subtitle;
+    in property <string> detail-text;
+
+    callback platform-clicked(int);
+    callback section-clicked(int);
+    callback search-submitted(string);
+    callback card-clicked(int);
+    callback refresh-requested();
+    callback back-requested();
+    callback theme-toggled();
+    callback width-changed(float);
+
+    property <length> card-width: (root.width - 200px - 40px - (root.columns - 1) * 16px) / root.columns;
+
+    forward-focus: keys;
+
+    keys := FocusScope {
+        width: parent.width;
+        height: parent.height;
+
+        changed width => { root.width-changed(self.width / 1px); }
+
+        key-pressed(event) => {
+            if (event.text == "/") {
+                search.focus();
+                return accept;
+            }
+            if (event.text == Key.F5) {
+                root.refresh-requested();
+                return accept;
+            }
+            if ((event.text == Key.Escape || event.text == Key.Backspace) && root.detail-open) {
+                root.back-requested();
+                return accept;
+            }
+            return reject;
+        }
+
+        HorizontalLayout {
+            // Barra lateral
+            Rectangle {
+                width: 200px;
+                background: Theme.side;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "media-lite";
+                        color: Theme.text;
+                        font-size: 18px;
+                        font-weight: 700;
+                        height: 32px;
+                    }
+
+                    Text {
+                        text: "PLATAFORMAS";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        height: 26px;
+                        vertical-alignment: bottom;
+                    }
+
+                    for name[i] in root.platforms : NavButton {
+                        label: name;
+                        active: i == root.platform-index;
+                        clicked => { root.platform-clicked(i); }
+                    }
+
+                    Text {
+                        text: "SECCIONES";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        height: 26px;
+                        vertical-alignment: bottom;
+                    }
+
+                    for name[i] in root.sections : NavButton {
+                        label: name;
+                        active: i == root.section-index;
+                        clicked => { root.section-clicked(i); }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                    }
+
+                    NavButton {
+                        label: Theme.dark ? "Tema claro" : "Tema oscuro";
+                        active: false;
+                        clicked => { root.theme-toggled(); }
+                    }
+                }
+            }
+
+            // Contenido
+            VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    height: 38px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: Theme.surface;
+                        border-radius: 8px;
+                        border-width: search.has-focus ? 1px : 0px;
+                        border-color: Theme.accent;
+
+                        Text {
+                            x: 14px;
+                            width: parent.width - 28px;
+                            height: parent.height;
+                            text: "Buscar…   (tecla /)";
+                            color: Theme.muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            visible: search.text == "";
+                        }
+
+                        search := TextInput {
+                            x: 14px;
+                            width: parent.width - 28px;
+                            height: parent.height;
+                            color: Theme.text;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            accepted => { root.search-submitted(self.text); }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 40px;
+                        background: Theme.surface;
+                        border-radius: 8px;
+
+                        Text {
+                            text: "⟳";
+                            color: Theme.text;
+                            font-size: 18px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            clicked => { root.refresh-requested(); }
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.status;
+                    color: Theme.muted;
+                    font-size: 12px;
+                    height: 16px;
+                    wrap: no-wrap;
+                    overflow: elide;
+                }
+
+                if !root.detail-open : ListView {
+                    vertical-stretch: 1;
+
+                    for row in root.rows : HorizontalLayout {
+                        spacing: 16px;
+                        height: root.card-width * 9 / 16 + 48px + 16px;
+
+                        for card in row.cards : CardView {
+                            card-width: root.card-width;
+                            data: card;
+                            activated => { root.card-clicked(card.index); }
+                        }
+                    }
+                }
+
+                if root.detail-open : Rectangle {
+                    vertical-stretch: 1;
+                    background: Theme.surface;
+                    border-radius: 12px;
+
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 10px;
+
+                        Rectangle {
+                            width: 110px;
+                            height: 34px;
+                            border-radius: 8px;
+                            background: Theme.surface-hi;
+
+                            Text {
+                                x: 14px;
+                                height: parent.height;
+                                text: "← Volver";
+                                color: Theme.text;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+
+                            TouchArea {
+                                width: parent.width;
+                                height: parent.height;
+                                clicked => { root.back-requested(); }
+                            }
+                        }
+
+                        Text {
+                            text: root.detail-title;
+                            color: Theme.text;
+                            font-size: 22px;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                        }
+
+                        Text {
+                            text: root.detail-subtitle;
+                            color: Theme.muted;
+                            font-size: 14px;
+                        }
+
+                        Text {
+                            text: root.detail-text;
+                            color: Theme.text;
+                            font-size: 14px;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

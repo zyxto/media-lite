@@ -125,6 +125,8 @@ pub trait Provider: Send + Sync {
 }
 ```
 
+En la implementación de la Fase 1 se simplificó lo siguiente: los proveedores guardan su propio agente HTTP, así que no reciben un `ctx`; `caps()` devuelve una estructura `Caps` con un booleano por función; `categories()` tiene un valor por defecto vacío. `home()` llega en la Fase 3.
+
 El modelo `Item / Page / Details / Source / Track / Season / Program` sale de juntar
 `lumiere/src/backend.h` con los campos de Sanson (`author_url`, `views`, `subs`, `is_short`, …),
 que Lumière ya tenía en parte "por compatibilidad".
@@ -309,16 +311,20 @@ renderizador de Slint usar y que el solucionador de YouTube anda en tiempos acep
 
 ### Fase 1: Esqueleto (1 semana)
 
-- [ ] Workspace de Cargo, perfiles de release, `rustfmt`/`clippy`, CI con GitHub Actions o Forgejo.
-- [ ] `core`: modelo de datos, `store` (settings, historial, favoritos), pool de hilos, cliente HTTP con UA y timeouts.
-- [ ] `core`: caché de miniaturas (memoria LRU + disco + reducción de tamaño).
-- [ ] `app`: ventana Slint con el tema (oscuro y claro, colores de acento por plataforma), barra
-      lateral, barra superior con buscador, grilla de tarjetas virtualizada, pantalla de detalle vacía.
-- [ ] La ventana recuerda tamaño y posición. Atajos globales: `/` buscar, Esc/Retroceso volver, F5 recargar.
-- [ ] `cli`: `media-lite-cli <plataforma> list|search|details …` imprime JSON.
-- [ ] Un proveedor de prueba con datos fijos para desarrollar la interfaz sin red.
+- [x] Workspace de Cargo, perfiles de release, `rustfmt`/`clippy` (`-D warnings`), CI en GitHub Actions (`.github/workflows/ci.yml`).
+- [x] `core`: modelo de datos, `store` (settings en TOML, listas en JSON, escritura atómica), pool de hilos con generaciones, cliente HTTP con UA y timeouts (ureq + rustls).
+- [x] `core`: caché de miniaturas (LRU en memoria con tope en bytes, disco con poda por antigüedad, reducción al tamaño de la tarjeta).
+- [x] `app`: ventana Slint con tema oscuro/claro, barra lateral, buscador, grilla virtualizada (`ListView`), pantalla de detalle vacía, Inter embebida.
+- [ ] Colores de acento por plataforma: pendiente, tiene sentido con más de una plataforma (Fase 3).
+- [x] La ventana recuerda tamaño y posición. Atajos: `/` buscar, Esc/Retroceso volver, F5 recargar.
+- [x] `cli`: `media-lite-cli platforms|list|search|details` imprime JSON.
+- [x] Un proveedor de prueba con datos fijos y miniaturas PNG reales, para desarrollar la interfaz sin red.
 
-**Terminado cuando** se pueda navegar una grilla falsa con miniaturas reales, con menos de 40 MB de RAM.
+**Medido:** la grilla con 60 miniaturas en una ventana de 1100×720, binario de release: **41,7 MB de RAM** (objetivo: < 40 MB, **no cumplido todavía**). Sin miniaturas el app usa 23,2 MB. El costo está en las copias de cada imagen dentro del renderer de Slint (~300 KB por miniatura de 256×144). Bajar a 224×126 solo ahorra 1,2 MB, así que no se hizo. La solución de fondo es cargar miniaturas solo para las filas visibles: va a la Fase 10.
+
+Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Femtovg aporta 0,65 MB; se mantiene para poder elegirlo en Ajustes.
+
+**Terminado cuando** se pueda navegar una grilla falsa con miniaturas reales, con menos de 40 MB de RAM. → Navegación: sí. RAM: 41,7 MB (ver arriba).
 
 ### Fase 2: Reproductor (1 semana)
 

@@ -1,2 +1,7 @@
 lumiere/
 Sanson-FLinux/
+target/
+dist/
+AppDir/
+*.AppImage
+*.tmp

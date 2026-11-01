@@ -1,0 +1,23 @@
+[package]
+name = "media-lite"
+description = "Pluto TV, Runtime, Plex, YouTube, Twitch, Kick y música en una sola app liviana"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+media-lite-core.workspace = true
+media-lite-providers.workspace = true
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-winit-software", "renderer-winit-femtovg"] }
+crossbeam-channel.workspace = true
+# Slint necesita fontconfig para buscar fuentes del sistema. Con esta feature se carga
+# libfontconfig.so.1 en tiempo de ejecución: no hace falta libfontconfig1-dev para compilar.
+fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
+log.workspace = true
+env_logger.workspace = true
+
+[build-dependencies]
+slint-build = "1.18"

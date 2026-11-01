@@ -1,0 +1,13 @@
+[package]
+name = "media-lite-providers"
+description = "Proveedores de cada plataforma (Pluto TV, Runtime, Plex…) detrás de un trait común"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+media-lite-core.workspace = true
+base64.workspace = true
+image.workspace = true
