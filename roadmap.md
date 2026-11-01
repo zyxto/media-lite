@@ -1,0 +1,556 @@
+# Roadmap: media-lite
+
+Una sola aplicación en Rust que junta **Lumière** (Pluto TV, Runtime, Plex) y **Sanson**
+(YouTube, Twitch, Kick, YouTube Music) y se distribuye como **AppImage** para antiX y cualquier
+Debian-like de 64 bits.
+
+**Equipo objetivo:** Pentium T4500 (2 núcleos, 2,3 GHz, SSE3/SSSE3, **sin SSE4**), 2 GB de RAM,
+gráficos Intel integrados (probablemente GMA 4500M: OpenGL 2.1, sin Vulkan), antiX (X11, sin
+systemd).
+
+---
+
+## 1. Objetivos y presupuesto
+
+| Métrica | Meta | Referencia |
+|---|---|---|
+| RAM de la app en reposo (grilla con miniaturas) | **< 60 MB** | Firefox con YouTube abierto: 600 MB–1,2 GB |
+| RAM total viendo un video a 480p (app + mpv) | **< 220 MB** | |
+| CPU viendo 480p H.264 | **< 60 %** de un núcleo | |
+| Binario | **< 14 MB** | Incluye QuickJS-NG (~1,5 MB) para los desafíos de YouTube |
+| AppImage | **< 10 MB** | Sanson.tcz: 1,1 MB, pero sin toolkit propio |
+| Arranque hasta ver la portada | **< 2 s** (sin contar red) | |
+| Abrir un video de YouTube (reproductor de YouTube ya en caché) | **< 3 s** | Sanson: 1–2 s con VisionOS |
+| Primera vez tras un cambio del reproductor de YouTube | **< 30 s**, una vez cada varios días | Medir en la Fase 0 |
+| Pico de RAM del solucionador JS (proceso aparte, temporal) | **< 150 MB** | Se libera al terminar |
+
+Principios que guían todas las decisiones:
+
+1. **El trabajo pesado lo hace mpv**, que es un proceso aparte y ya está optimizado en C.
+   La app solo navega catálogos, consigue URLs y dibuja la interfaz.
+2. **Nada de navegador embebido** (ni WebView, ni Electron, ni Tauri). En este equipo un
+   WebKitGTK solo ya se lleva más de 150 MB.
+3. **Códecs livianos primero**: H.264 + AAC. VP9 se decodifica mal en este CPU y AV1 no se puede ver.
+4. **Todo lo que crece tiene límite**: caché de miniaturas, historial, mensajes del chat, buffer de mpv.
+5. **El JavaScript queda encerrado**: solo se ejecuta para los desafíos de YouTube, en un proceso aparte que termina y libera la memoria.
+
+---
+
+## 2. Decisiones de arquitectura
+
+### 2.1 Interfaz: Slint
+
+| Opción | RAM | Aspecto | En GMA 4500 | Veredicto |
+|---|---|---|---|---|
+| **Slint** | 15–40 MB | Moderno (lenguaje declarativo `.slint`, temas, animaciones) | **Tiene renderizador por software**; femtovg pide solo GL ES 2.0 | ✅ **Elegida** |
+| egui / eframe | 30–60 MB | Correcto, se nota "de herramienta" | Repinta seguido y hace falta afinar GL 2.1 | Plan B |
+| iced | 40–80 MB | Moderno | wgpu pide Vulkan/GL 3.3, así que cae a tiny-skia | ❌ |
+| GTK4 (relm4) | 80–150 MB | Moderno | Cae a Cairo; meterlo en el AppImage es pesado | ❌ |
+| fltk-rs | 10–20 MB | Igual que hoy (anticuado) | Perfecto | Solo si todo falla |
+
+- Backend `winit` sobre X11. El renderizador se elige con `SLINT_BACKEND` y queda guardado
+  en Ajustes: `winit-software` es el más seguro, `winit-femtovg` es más fluido si el GL anda.
+- Fuente incluida: **Inter** recortada a latín (~300 KB), para que se vea igual en cualquier distro.
+- Licencia: Slint se puede usar bajo GPLv3, la misma que tienen hoy Lumière y Sanson.
+
+### 2.2 Reproductor: mpv (proceso aparte, controlado por JSON IPC)
+
+Pasar de mplayer a **mpv** elimina gran parte del código de las referencias:
+
+| En las referencias | Por qué existía | En media-lite |
+|---|---|---|
+| `stream.c` (proxy HTTP local, ~1000 líneas) | El mplayer de FLinux no abre HTTPS ni HLS bien | **Desaparece casi entero**: mpv/ffmpeg abren HTTPS, HLS, fMP4, AES-128 y audio aparte (`--audio-file`) |
+| `aes.c` | Descifrar segmentos HLS | Desaparece (lo hace ffmpeg) |
+| Descarga y conversión de subtítulos WebVTT/HLS | mplayer no los entiende | mpv los toma del master HLS o con `sub-add <url>` |
+| `player.cpp` con `-slave` y parseo de texto | Control de mplayer | Cliente JSON IPC por socket Unix (~300 líneas) |
+| `mpkeys.h` | Teclas tipo mplayer | Un `input.conf` incluido en el AppImage con la misma tabla de teclas |
+
+Lo que **sí** sigue haciendo falta: un **mini-proxy que solo reescribe playlists `.m3u8`**
+(texto, no video). Se usa para saltar los anuncios de Twitch y para sacar los de Pluto TV
+(`SP_SKIP_ADS`, `SP_PLUTO_ADS`). mpv baja los segmentos directo del CDN.
+
+Opciones de mpv para este equipo (el usuario las puede cambiar en Ajustes):
+
+```
+--ytdl=no                       # las URLs las resuelve media-lite
+--hwdec=auto-safe               # VA-API si el driver i965 decodifica H.264 en esta GPU (verificar con vainfo)
+--vo=gpu  | --vo=xv             # xv es el "video liviano" si gpu va lento en GL 2.1
+--profile=fast
+--vd-lavc-skiploopfilter=all    # lo mismo que hacía Sanson con mplayer
+--framedrop=vo
+--cache=yes --demuxer-max-bytes=24MiB --demuxer-max-back-bytes=8MiB   # RAM acotada
+--input-ipc-server=$XDG_RUNTIME_DIR/media-lite/mpv.sock
+--input-conf=$APPDIR/usr/share/media-lite/input.conf
+```
+
+Tres formas de mostrar el video:
+
+1. **Ventana flotante (PiP)**: mpv en su propia ventana, sin bordes, siempre encima y en una esquina
+   (`--ontop --no-border --geometry=480x270-16-16`). **Es lo que pediste: ver videos mientras
+   trabajás.** Es lo primero que se implementa.
+2. **Integrado**: mpv dibuja dentro de la ventana de la app (`--wid` sobre una ventana hija X11
+   creada con `x11rb` en el área del video, al lado del panel con chat, episodios o guía).
+3. **Solo audio** para la música (`--no-video`): casi no usa CPU.
+
+**mpv no va dentro del AppImage.** Es una dependencia del sistema (`sudo apt install mpv`). Así
+el AppImage queda en pocos MB y mpv usa los drivers VA-API de la distro. Si no lo encuentra al
+arrancar, la app muestra el comando para instalarlo.
+
+### 2.3 Proveedores: Rust nativo, con JavaScript solo donde YouTube lo exige
+
+Sanson corre cada plataforma como un plugin JS dentro de QuickJS. En media-lite **la lógica de
+las plataformas se escribe en Rust**, detrás de un solo trait. Un motor de JavaScript sigue haciendo
+falta, pero **solo para los desafíos de YouTube** (ver 2.4), metido en una caja sin red ni disco:
+
+- Un solo lenguaje para catálogos, búsquedas y listas, con tipos verificados. No queda un
+  intérprete abierto por plataforma.
+- **Para no recompilar cada vez que YouTube cambia algo**, los datos que cambian seguido
+  (`clientVersion`, user agents, orden de los clientes, parámetros de pestañas) van en un
+  `clients.toml` incluido en el binario que se puede reemplazar desde `~/.config/media-lite/`.
+
+```rust
+pub trait Provider: Send + Sync {
+    fn id(&self) -> PlatformId;
+    fn caps(&self) -> Caps;                          // LIVE | MOVIES | SERIES | VIDEOS | MUSIC | CHAT | GUIDE | LOGIN …
+    fn home(&self, ctx: &Ctx) -> Result<Vec<Shelf>>;
+    fn categories(&self, sec: Section, ctx: &Ctx) -> Result<Vec<Category>>;
+    fn list(&self, sec: Section, cat: &str, page: Option<Cursor>, ctx: &Ctx) -> Result<Page>;
+    fn search(&self, q: &str, page: Option<Cursor>, ctx: &Ctx) -> Result<Page>;
+    fn details(&self, item: &Item, ctx: &Ctx) -> Result<Details>;     // fuentes, audios, subtítulos
+    fn seasons(&self, series: &Item, ctx: &Ctx) -> Result<Vec<Season>> { unsupported() }
+    fn guide(&self, channel: &Item, ctx: &Ctx) -> Result<Vec<Program>> { unsupported() }
+    fn related(&self, item: &Item, ctx: &Ctx) -> Result<Page> { unsupported() }
+    fn comments(&self, item: &Item, page: Option<Cursor>, ctx: &Ctx) -> Result<Page> { unsupported() }
+    fn chat(&self, item: &Item, ctx: &Ctx) -> Result<Box<dyn ChatSource>> { unsupported() }
+}
+```
+
+El modelo `Item / Page / Details / Source / Track / Season / Program` sale de juntar
+`lumiere/src/backend.h` con los campos de Sanson (`author_url`, `views`, `subs`, `is_short`, …),
+que Lumière ya tenía en parte "por compatibilidad".
+
+### 2.4 YouTube: desafíos de JavaScript, PO tokens y SABR
+
+**Situación a noviembre de 2026** (fuentes al final):
+
+- **YouTube necesita un motor de JavaScript.** Las URLs de los formatos traen dos desafíos que hay
+  que resolver ejecutando el código del reproductor de YouTube (`base.js`, de unos 2–3 MB). El
+  desafío `n` existe para frenar la descarga, y si no se resuelve el video va lentísimo o da 403.
+  El desafío `sig` es la firma de las URLs cifradas. Desde la versión 2025.11.12, **yt-dlp pide un
+  motor externo** (Deno, Node, QuickJS o QuickJS-NG) más los scripts del proyecto
+  [`yt-dlp/ejs`](https://github.com/yt-dlp/ejs). Sin motor, el soporte de YouTube figura como obsoleto y faltan formatos.
+- **Los clientes "sin JS" se están cerrando.** Sanson usa el cliente VisionOS, que hoy todavía
+  entrega un HLS completo (H.264 hasta 1080p) sin PO token ni JS. Pero `android_vr`, que estaba en la
+  misma situación, pasó a pedir PO token a mediados de 2026. VisionOS tampoco funciona con videos
+  "para niños" y a veces pide iniciar sesión. **No se puede depender de un solo cliente.**
+- **PO tokens:** son tokens antibots que se generan con BotGuard, algo que en la práctica necesita un
+  navegador. Generarlos en este equipo es inviable. **media-lite usa solo clientes que no piden PO
+  token** (lo explica la guía de PO tokens de yt-dlp):
+  - `web_safari`: sus formatos **HLS** no piden token por ahora, pero sí resolver los desafíos JS.
+  - `web_embedded`: solo funciona con videos que se pueden insertar en otras páginas.
+  - `tv`: necesita cookies de sesión o de invitado.
+  - Los **directos en HLS** no piden token en ningún cliente salvo `ios`.
+- **SABR** es el protocolo propio de YouTube que entrega el video en pedazos según el ancho de banda.
+  mpv/ffmpeg **no lo reproducen**, así que se descartan los clientes que solo entregan SABR (`web`
+  sin token).
+- Las URLs de los streams **vencen a las ~6 h** y **quedan atadas a la IP** que las pidió. Por eso se
+  resuelven justo antes de reproducir y se vuelven a pedir si mpv recibe un 403. Si cambiás de VPN a
+  mitad de un video, también hay que pedirlas de nuevo.
+
+**Diseño en media-lite:**
+
+```
+           ┌──────────────── clients.toml (reemplazable) ────────────────┐
+ videoId → │ 1. visionos     HLS sin JS ni token          (rápido)       │ → URLs H.264/AAC → mpv
+           │ 2. web_safari   HLS, desafío n con JS        (normal)       │
+           │ 3. web_embedded / tv con JS                  (normal)       │
+           │ 4. yt-dlp -J si está instalado, con su motor (lento, último)│
+           └─────────────────────────────────────────────────────────────┘
+```
+
+1. **Motor embebido: QuickJS-NG mediante `rquickjs`** (licencia MIT; suma ~1–1,5 MB al binario). Es
+   el mismo motor que ya traía Sanson, pero acá **solo ejecuta el solucionador**: no tiene
+   `fetch`, ni sockets, ni disco. yt-dlp advierte que con QuickJS-NG **anterior a 0.12** resolver un
+   desafío puede tardar *varios minutos*. Hay que verificar en la Fase 0 qué versión trae
+   `rquickjs-sys`, y si es vieja, compilar contra una ≥ 0.12.
+   - Descartados: **Deno/Node** (de 40 a 100 MB de binario y más de 60 MB de RAM: demasiado para
+     esta laptop) y **Boa** (escrito en Rust puro, pero bastante más lento que QuickJS).
+2. **Solucionador: los scripts oficiales de [`yt-dlp/ejs`](https://github.com/yt-dlp/ejs)**
+   (licencia Unlicense; incluyen meriyah [ISC] y astring [MIT]). No se reescriben: los mantiene el
+   equipo de yt-dlp y se actualizan cada vez que YouTube cambia el reproductor. Su entrada y salida en JSON:
+   ```jsonc
+   // primera vez con un base.js nuevo: lento (hay que analizar unos 2–3 MB de JS)
+   { "type": "player", "player": "<base.js>", "output_preprocessed": true,
+     "requests": [{ "type": "n", "challenges": ["<n1>", "<n2>"] }, { "type": "sig", "challenges": ["…"] }] }
+   // las siguientes veces: rápido
+   { "type": "preprocessed", "preprocessed_player": "<cache>", "requests": [ … ] }
+   // → { "type": "result", "preprocessed_player": "…", "responses": [{ "type": "result", "data": { "<n1>": "<resuelto>" } }] }
+   ```
+3. **Caché por versión del reproductor**: el `preprocessed_player` se guarda en
+   `~/.cache/media-lite/yt-player/<player_id>.js`. YouTube cambia `base.js` cada algunos días.
+   Solo la primera reproducción después de un cambio paga el costo de analizarlo, y la interfaz
+   lo avisa con "Preparando YouTube…". También se cachean los `n` ya resueltos (`n → resultado`)
+   mientras siga vigente la misma versión del reproductor.
+4. **Se ejecuta en un proceso aparte** (`media-lite --yt-solver`, el mismo binario): recibe JSON
+   por stdin y devuelve JSON por stdout. Analizar `base.js` puede usar más de 100 MB por un rato, y
+   cuando el proceso termina esa memoria vuelve entera al sistema. Si el solucionador se cuelga o
+   falla, la app sigue funcionando. Tiene un tiempo límite configurable (60 s por defecto).
+5. **Actualizable sin recompilar**: el AppImage trae una versión de los scripts de `ejs`. En Ajustes,
+   la opción «Actualizar el soporte de YouTube» baja la última versión publicada en GitHub (como
+   `--remote-components ejs:github` de yt-dlp), verifica el hash y la guarda en
+   `~/.local/share/media-lite/ejs/`. Como el JS corre en una caja sin red ni disco, ejecutar código
+   bajado no expone el sistema.
+6. **Se sigue probando primero el cliente sin JS** (VisionOS, igual que hoy en Sanson) porque es
+   el más rápido. Los demás clientes son el respaldo, en el orden que diga `clients.toml`.
+7. **Formatos**: se prefiere el HLS de `web_safari`/`visionos` con variantes **H.264**, porque mpv
+   lo abre directo y el CPU lo aguanta. Los formatos DASH separados (video `avc1` + audio `mp4a`) se
+   pasan a mpv con `--audio-file`.
+8. **yt-dlp queda como último recurso** solo si el usuario ya lo tiene instalado **con** un motor
+   JS. La versión de yt-dlp en los repositorios de Debian/antiX suele quedar vieja, así que nunca es
+   el camino principal.
+9. **YouTube Music** usa la misma cascada en modo solo audio. El respaldo en SoundCloud que ya tenía Sanson se mantiene.
+
+### 2.5 Concurrencia y red (pensado para 2 núcleos)
+
+- **Sin tokio.** Un pool fijo de 3 hilos (2 de red y 1 de imágenes) con `crossbeam-channel`. Los
+  resultados vuelven a la interfaz con `slint::invoke_from_event_loop`. Es el mismo modelo que
+  `backend.cpp`, pero con tipos.
+- HTTP: **`ureq`** (bloqueante, chico) con **`rustls`** + certificados del sistema. **No usar
+  OpenSSL**: Debian 11 trae libssl1.1 y Debian 12 trae libssl3, y un AppImage enlazado a una no
+  arranca en la otra.
+- WebSocket del chat: **`tungstenite`** (síncrono, en un hilo por chat abierto).
+- Cancelación: cada pedido lleva un número de generación. Si cambiaste de pantalla, el resultado viejo se descarta.
+
+### 2.6 Miniaturas (el mayor riesgo de RAM)
+
+- `image` con solo `jpeg`, `png` y `webp`. Cada imagen **se achica al tamaño de la tarjeta apenas
+  se decodifica** (p. ej. 320×180). Así queda en ~230 KB en RAM, y no los 8 MB de una de 1080p.
+- Caché en memoria LRU acotada (**24 MB** por defecto) y caché en disco en
+  `~/.cache/media-lite/thumbs` (con límite de tamaño, se borran primero las más viejas).
+- Las grillas usan `ListView` virtualizado de Slint: solo existen las tarjetas visibles.
+- Los emotes animados del chat se muestran estáticos (primer cuadro).
+
+### 2.7 Datos en disco
+
+- `~/.config/media-lite/`: `settings.toml`, `favorites.json`, `following.json`, `history.json`
+  (máximo 500 entradas), `music-queue.json`, `cookies/` (permisos 0600).
+- `~/.cache/media-lite/`: miniaturas y portadas.
+- Respeta `XDG_CONFIG_HOME` / `XDG_CACHE_HOME`, como ya hacía `store.cpp`.
+- `serde` + `serde_json`/`toml`. No hace falta SQLite.
+
+### 2.8 Compilación pensada para este CPU
+
+```toml
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+```
+
+- **No usar `-C target-cpu=native` ni `x86-64-v2`**: el T4500 no tiene SSE4.1/4.2 ni POPCNT y
+  el binario se cerraría con "illegal instruction". Se compila para `x86_64-unknown-linux-gnu`
+  base (x86-64 v1).
+- Se compila dentro de un contenedor **Debian 11 (bullseye, glibc 2.31)** para que ande en
+  antiX 21/23, Debian 11/12/13, Ubuntu 20.04+, MX, etc.
+
+### 2.9 Estructura del repositorio
+
+```
+media-lite/
+├── Cargo.toml                  # workspace
+├── crates/
+│   ├── core/                   # modelo, store (config/historial/favoritos), caché, pool de hilos, http
+│   ├── providers/              # pluto, runtime, plex, youtube, ytmusic, twitch, kick, soundcloud, lrclib
+│   │   └── clients.toml        # constantes de innertube que cambian seguido
+│   ├── player/                 # cliente IPC de mpv + proxy que reescribe m3u8
+│   ├── ytsolver/               # QuickJS-NG (rquickjs) + scripts de yt-dlp/ejs, caché por player_id
+│   ├── chat/                   # twitch IRC (ws), kick (ws), youtube live chat (polling), repeticiones
+│   └── cli/                    # media-lite-cli: probar proveedores sin interfaz (como lumiere-cli)
+├── app/
+│   ├── src/                    # main.rs, controladores de pantallas, puente Slint <-> core
+│   └── ui/                     # *.slint: tema, tarjetas, grilla, barra lateral, reproductor, ajustes
+├── packaging/
+│   ├── AppRun, media-lite.desktop, media-lite.png
+│   ├── input.conf, mpv.conf
+│   ├── ejs/                    # yt.solver.lib + yt.solver.core (versión fijada, con hash y licencias)
+│   └── build-appimage.sh
+└── docs/
+```
+
+---
+
+## 3. Fases
+
+Cada fase termina con algo que se puede usar. Las fases 3 a 6 se pueden hacer en otro orden.
+
+### Fase 0: Validar el hardware (1–2 días)
+
+Antes de escribir la app, medir en la laptop.
+
+- [ ] `lspci | grep VGA`, `glxinfo -B`, `vainfo`: anotar GPU, versión de GL y si VA-API decodifica H.264.
+- [ ] Probar mpv con un video de YouTube a 360p/480p/720p en H.264
+      (`yt-dlp -f "bv[vcodec^=avc1][height<=480]+ba[acodec^=mp4a]"` y pasarle las URLs a mpv).
+      Medir CPU y RAM con `--vo=gpu`, con `--vo=xv`, con `--hwdec=no` y con `--hwdec=vaapi`.
+- [ ] Probar un directo HLS de Twitch y un canal de Pluto TV en mpv (las URLs se sacan con las herramientas CLI
+      de las referencias si hace falta).
+- [ ] Compilar un ejemplo de Slint (grilla con 200 tarjetas e imágenes) con `winit-software` y
+      `winit-femtovg`. Medir RAM y fluidez al hacer scroll.
+- [ ] **Solucionador de YouTube en este CPU**: compilar un prototipo con `rquickjs` que cargue los
+      scripts de `yt-dlp/ejs` y resuelva un desafío `n` de un `base.js` real. Medir:
+      (a) la versión de QuickJS-NG que trae `rquickjs-sys` (tiene que ser ≥ 0.12),
+      (b) el tiempo y el pico de RAM de la primera vez (`type: "player"`),
+      (c) el tiempo con el reproductor ya preprocesado (`type: "preprocessed"`).
+      Si (b) pasa de ~60 s, evaluar Boa o pedirle a Deno solo el preprocesado y guardarlo.
+- [ ] Comprobar que los clientes `visionos` y `web_safari` entregan HLS con variantes H.264 para videos comunes y directos.
+- [ ] Anotar los resultados en `docs/hardware.md`. Con eso se fijan las opciones de mpv por defecto, el renderizador y la calidad por defecto.
+
+**Terminado cuando** sepamos qué combinación de `vo`/`hwdec`/calidad se ve fluida, qué
+renderizador de Slint usar y que el solucionador de YouTube anda en tiempos aceptables.
+
+### Fase 1: Esqueleto (1 semana)
+
+- [ ] Workspace de Cargo, perfiles de release, `rustfmt`/`clippy`, CI con GitHub Actions o Forgejo.
+- [ ] `core`: modelo de datos, `store` (settings, historial, favoritos), pool de hilos, cliente HTTP con UA y timeouts.
+- [ ] `core`: caché de miniaturas (memoria LRU + disco + reducción de tamaño).
+- [ ] `app`: ventana Slint con el tema (oscuro y claro, colores de acento por plataforma), barra
+      lateral, barra superior con buscador, grilla de tarjetas virtualizada, pantalla de detalle vacía.
+- [ ] La ventana recuerda tamaño y posición. Atajos globales: `/` buscar, Esc/Retroceso volver, F5 recargar.
+- [ ] `cli`: `media-lite-cli <plataforma> list|search|details …` imprime JSON.
+- [ ] Un proveedor de prueba con datos fijos para desarrollar la interfaz sin red.
+
+**Terminado cuando** se pueda navegar una grilla falsa con miniaturas reales, con menos de 40 MB de RAM.
+
+### Fase 2: Reproductor (1 semana)
+
+- [ ] `player`: lanzar mpv, conectarse por IPC, `observe_property` de `time-pos`, `duration`,
+      `pause`, `eof-reached`, `track-list`, `demuxer-cache-state`, `video-params`.
+- [ ] Modo **ventana flotante** (PiP) y modo **solo audio**.
+- [ ] Barra de controles en la app: pausa, barra de avance, ±10 s, volumen, pantalla completa,
+      calidad, botón **Idioma** (audio y subtítulos con `track-list`, `aid`, `sid`, `sub-add`).
+- [ ] `input.conf` con la tabla de teclas de las referencias (`<`/`>`/`n` anterior/siguiente: mpv
+      se lo avisa a la app con `script-message`).
+- [ ] Retomar donde quedó (`start=`), con la posición guardada cada 10 s y al cerrar.
+- [ ] Reproducción continua con la cuenta regresiva de 5 s (como Sanson), sin mezclar shorts con videos.
+- [ ] Si se traba, se reconecta solo, y si vuelve a pasar enseguida, baja una calidad (`demuxer-cache-state` + temporizador).
+- [ ] Proxy de playlists `.m3u8` en `127.0.0.1` (puerto aleatorio) con filtros enchufables: `skip_twitch_ads`, `skip_pluto_ads`.
+
+**Terminado cuando** una URL HLS y un par video+audio separados se puedan ver en ventana flotante, controlados desde la app.
+
+### Fase 3: TV gratis, migrar Lumière (1–2 semanas)
+
+Portar `pluto.cpp`, `runtime.cpp`, `plex.cpp` y `providers.cpp`:
+
+- [ ] **Pluto TV**: arranque (`boot.pluto.tv`), canales en vivo por categoría con "Ahora:", guía,
+      VOD de películas y series con temporadas, búsqueda, filtro de anuncios y continuidad de clips (`SP_RETIME`:
+      primero probar si mpv ya lo maneja bien con las discontinuidades).
+- [ ] **Runtime**: canales, películas y series (`api-ott.runtime.tv`).
+- [ ] **Plex**: canales en vivo + EPG, películas y series, filtro "solo en español" con opción de
+      sumar inglés, audio aparte.
+- [ ] Ocultar todo lo que tiene DRM (igual que hoy).
+- [ ] Panel lateral al reproducir: guía y demás canales, episodios de la serie, más películas.
+- [ ] Anterior/siguiente para cambiar de canal; el idioma elegido sigue en el próximo episodio.
+- [ ] Traducir géneros (`genre_es`) y nombres de idiomas (`lang_name`).
+
+**Terminado cuando** todo lo que muestran las capturas de `lumiere/capturas/` funcione en media-lite.
+
+### Fase 4: YouTube (3 semanas)
+
+Portar `plugins/youtube/script.js` y `comun.js`, y sumar el solucionador de desafíos (sección 2.4).
+
+**4a. Solucionador (`crates/ytsolver`), 1 semana**
+
+- [ ] Obtener la URL y el `player_id` de `base.js` (de `/iframe_api` o de la página del video) y bajarlo a `~/.cache/media-lite/yt-player/`.
+- [ ] Subcomando `media-lite --yt-solver`: lee el JSON de `ejs` por stdin, ejecuta `lib` + `core` en
+      QuickJS-NG **sin** módulos de red ni archivos y responde por stdout. Tiene límite de memoria
+      (`JS_SetMemoryLimit`) y de tiempo.
+- [ ] Caché de `preprocessed_player` por `player_id` y de los `n` ya resueltos. Se borran las
+      versiones del reproductor de más de 14 días.
+- [ ] Al encontrar un `base.js` nuevo, preprocesarlo en segundo plano y no esperar a que el usuario abra un video.
+- [ ] Actualizar los scripts `ejs` desde GitHub (verificando el hash) y elegir en Ajustes entre la versión incluida y la bajada.
+- [ ] Pruebas con `base.js` reales guardados y sus respuestas esperadas (como hace `yt-dlp/ejs`), más una prueba nocturna en la CI contra YouTube.
+
+**4b. Cascada de clientes**
+
+- [ ] Leer de `clients.toml` el orden de los clientes y sus datos: `visionos` → `web_safari` (HLS + `n`) →
+      `web_embedded`/`tv` (+ `n`/`sig`) → `yt-dlp` externo si está.
+- [ ] Descartar los formatos SABR, los que tienen DRM y los que piden PO token. **Elegir H.264 + AAC**
+      hasta la calidad configurada (480p por defecto, 360p si la ventana es chica), igual que Sanson.
+- [ ] Recordar qué cliente funcionó la última vez y empezar por ese durante la sesión.
+- [ ] Si mpv recibe 403 o la URL vence (~6 h, o cambió la IP), resolverla de nuevo y retomar en la misma posición.
+- [ ] Mensajes claros: "YouTube cambió y hay que actualizar el soporte (Ajustes)", "Este video pide iniciar sesión".
+
+**4c. Catálogo e interfaz**
+
+- [ ] Cliente innertube WEB (portada por temas, búsqueda de videos y canales, canal con pestañas
+      Videos/En vivo/Shorts, relacionados, `visitorData` guardado 3 días). Estos pedidos no piden ni JS ni token.
+- [ ] Directos de YouTube (HLS, sin PO token).
+- [ ] Botón Idioma: audio original por defecto (no el doblaje automático) y subtítulos, incluidos los automáticos.
+- [ ] Comentarios y chat en vivo (`live_chat/get_live_chat` por polling).
+- [ ] "Siguiendo" sin cuenta a través del RSS de cada canal.
+- [ ] Botones de filtro Videos / En vivo / Shorts cuando una lista mezcla tipos.
+
+### Fase 5: Twitch y Kick (1–2 semanas)
+
+Portar `plugins/twitch`, `plugins/kick`, `ws.c` y la parte de chat de `app_watch.cpp`:
+
+- [ ] Twitch: GQL (portada, búsqueda, canal, VODs), token de acceso + `usher.ttvnw.net`, salto de anuncios
+      en el proxy ("Saltando el anuncio de Twitch…" mientras dura).
+- [ ] Kick: API (portada, búsqueda, canal, directos y VODs).
+- [ ] Chat en vivo de Twitch (IRC sobre WebSocket) y de Kick (su WebSocket), con emotes
+      (caché de imágenes compartida y límite de ~300 mensajes en memoria).
+- [ ] Repetición del chat sincronizada con `time-pos` en VODs de Twitch y Kick.
+
+### Fase 6: Música (1–2 semanas)
+
+Portar `plugins/music` y `app_music.cpp`:
+
+- [ ] YouTube Music: canciones, álbumes y artistas (seguir artistas), solo audio. Usa la misma cascada de clientes y el mismo solucionador de la Fase 4.
+- [ ] **Barra de reproducción persistente** abajo: la música sigue sonando mientras navegás, y el botón
+      «Sonando» lleva a la pantalla de la canción.
+- [ ] Portada grande + **letra sincronizada** (`lrclib.net`): la línea actual resaltada, y un clic salta a ese momento.
+- [ ] Cola editable (reproducir a continuación, agregar, subir/bajar/quitar/vaciar), guardada en disco.
+- [ ] Aleatorio, repetir todo/una, **radio** al terminar la cola.
+- [ ] Respaldo en SoundCloud si YouTube no entrega el audio.
+- [ ] Opcional: teclas multimedia del teclado (XF86AudioPlay/Next/Prev) con un atajo global X11.
+
+### Fase 7: Unificación (1 semana)
+
+Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
+
+- [ ] **Barra lateral única**:
+  - Inicio: "Seguir viendo", directos de los canales que seguís y algo de cada plataforma.
+  - En vivo: canales de TV (Pluto/Runtime/Plex) y directos (Twitch/Kick/YouTube), con filtro por plataforma.
+  - Películas y series: Pluto, Runtime y Plex.
+  - Videos: YouTube.
+  - Música.
+  - Siguiendo y Favoritos: canales de Twitch/Kick/YouTube, artistas y favoritos de TV en un solo lugar.
+  - Historial.
+  - Ajustes.
+- [ ] **Búsqueda global**: se consulta a todas las plataformas a la vez (con un tope de 2–3 pedidos
+      simultáneos) y los resultados se agrupan en filas por plataforma, cada una con "ver más".
+- [ ] Historial y "Seguir viendo" unificados, con la posición de cada título.
+- [ ] Ajustes unificados: calidad, `vo`, `hwdec`, video liviano, renderizador, tamaño de la caché,
+      idioma de Plex, plataformas visibles (para esconder las que no uses).
+
+### Fase 8: Cuentas (opcional, 1 semana)
+
+- [ ] Iniciar sesión **pegando cookies** (formato Netscape o encabezado `Cookie:`), como ya permite Sanson.
+- [ ] Importar cookies de Firefox/Chromium/Pale Moon instalados en la distro (leer `cookies.sqlite`
+      con `rusqlite` con la opción `bundled`, solo si se usa esta función).
+- [ ] Con sesión: recomendaciones de la cuenta, canales que seguís en la plataforma, escribir en el
+      chat (Twitch/Kick/YouTube), comentar en YouTube (`SAPISIDHASH`).
+- [ ] Las cookies se guardan con permisos 0600 y nunca se escriben en los logs.
+
+### Fase 9: Empaquetado AppImage (3–4 días)
+
+- [ ] `packaging/build-appimage.sh`, que corre dentro de `debian:bullseye`:
+  1. `cargo build --release`
+  2. Arma el `AppDir`: `usr/bin/media-lite`, `usr/share/media-lite/{input.conf,mpv.conf,clients.toml,ejs/}`,
+     `media-lite.desktop`, ícono 256×256, `AppRun`.
+  3. **No incluir** mpv, libX11 ni libGL: se usan los del sistema. Revisar con `ldd` que solo dependa de
+     glibc, libgcc_s, libm, libdl y de lo que winit carga con `dlopen` (libX11, libxkbcommon, libxcursor, libXi, libGL/EGL).
+  4. Empaquetar con `appimagetool` y el **runtime estático nuevo** (`AppImage/type2-runtime`), que
+     no necesita `libfuse2` en el sistema; alcanza con `fusermount` (paquete `fuse`/`fuse3`).
+- [ ] Al arrancar, revisar las dependencias: si falta `mpv`, mostrar `sudo apt install mpv`; si falta
+      FUSE, el README explica `./media-lite.AppImage --appimage-extract-and-run`.
+- [ ] Integración opcional con el menú: copiar el `.desktop` a `~/.local/share/applications`
+      (el menú de IceWM/JWM de antiX lo toma).
+- [ ] Actualizaciones opcionales: `zsync` embebido (`gh-releases-zsync|…`) para AppImageUpdate.
+- [ ] Probar en: antiX 23 (lo que tenés), Debian 11, Debian 12, MX Linux, Ubuntu 22.04 (máquinas virtuales livianas).
+- [ ] Incluir las licencias de terceros (`ejs`: Unlicense; meriyah: ISC; astring: MIT; QuickJS-NG/rquickjs: MIT) en `usr/share/doc/media-lite/`.
+- [ ] CI: cada tag publica `media-lite-x86_64.AppImage` y su `.zsync`.
+
+### Fase 10: Pulido y rendimiento (continuo)
+
+- [ ] Perfil **"equipo lento"** de un clic: `--vo=xv`, 360p, `--framedrop=decoder+vo`, sin
+      animaciones en la interfaz, caché de miniaturas de 12 MB.
+- [ ] Medir con `heaptrack` y `/proc/<pid>/status` (VmRSS) en cada versión, con un tope en la CI
+      (por ejemplo, que el arranque con datos falsos no pase de 45 MB).
+- [ ] Mensajes de error en español y comprensibles ("Pluto TV no responde", "Este título tiene DRM").
+- [ ] Capturas y README nuevos.
+
+---
+
+## 4. De qué se libra cada pieza vieja
+
+| Pieza en las referencias | Qué pasa en media-lite |
+|---|---|
+| FLTK (`ui.cpp`, `views.cpp`) | Slint (`app/ui/*.slint`) |
+| mplayer + `player.cpp` | mpv + cliente IPC (`crates/player`) |
+| `stream.c` (proxy completo) | Proxy que solo reescribe `.m3u8` |
+| `aes.c` | Se elimina (ffmpeg) |
+| cJSON | `serde_json` |
+| QuickJS + `engine.c` + `sanson_host.js` | **QuickJS-NG se queda, pero con otro rol**: no corre plataformas, solo el solucionador oficial de `yt-dlp/ejs`, en un proceso aparte y sin red (`crates/ytsolver`). Se elimina `sanson_host.js` |
+| `plugins/*.js` | `crates/providers/*` (lógica portada uno a uno) |
+| `ws.c` | `tungstenite` |
+| `hash.c` (MD5/SHA1 para SAPISIDHASH, etc.) | crates `md-5` / `sha1` |
+| `cookies.cpp` (lee `cookies.sqlite` con la lib de Pale Moon) | Parser de cookies + `rusqlite` opcional |
+| `store.cpp` (×2) | `crates/core/store` (un solo store) |
+| `lumiere-cli`, `sanson-cli`, `sp-test` | `media-lite-cli` |
+| `make_tcz.sh` | `packaging/build-appimage.sh` |
+
+## 5. Crates previstos
+
+| Crate | Para qué | Por qué este |
+|---|---|---|
+| `slint` (`backend-winit`, `renderer-software`, `renderer-femtovg`) | Interfaz | Liviana, moderna, funciona sin GPU |
+| `ureq` + `rustls` + `rustls-native-certs` | HTTP | Bloqueante y chico, sin OpenSSL |
+| `serde`, `serde_json`, `toml` | Datos | Estándar |
+| `crossbeam-channel` | Pool de hilos | Simple, sin runtime async |
+| `image` (jpeg, png, webp) | Miniaturas | Se activan solo los formatos necesarios |
+| `lru` | Caché en memoria | |
+| `tungstenite` (rustls) | Chat | Síncrono |
+| `rquickjs` (QuickJS-NG) | Desafíos `n`/`sig` de YouTube | MIT, ~1,5 MB, el motor más rápido entre los livianos; verificar QuickJS-NG ≥ 0.12 |
+| `sha2` | Verificar los scripts `ejs` bajados | |
+| `x11rb` | Ventana hija para mpv integrado, teclas multimedia | Puro Rust |
+| `md-5`, `sha1`, `base64`, `url`, `percent-encoding` | Utilidades | |
+| `directories` | Rutas XDG | |
+| `log` + `env_logger` | Depuración (`MEDIA_LITE_DEBUG=1`) | |
+| `rusqlite` (`bundled`, opcional) | Importar cookies del navegador | Detrás de una *feature* de Cargo |
+
+## 6. Riesgos y cómo mitigarlos
+
+| Riesgo | Mitigación |
+|---|---|
+| YouTube cambia el reproductor (`base.js`) y el solucionador deja de andar | Scripts `ejs` actualizables desde Ajustes sin recompilar; usar los mismos que yt-dlp, que se arreglan en horas o días |
+| Se cierran los clientes sin PO token (como pasó con `android_vr`) | Cascada en `clients.toml` reemplazable; probar todas las noches en la CI con `media-lite-cli`; respaldo con `yt-dlp` externo. **Generar PO tokens queda fuera de alcance** (necesita un navegador) |
+| YouTube obliga a usar SABR en todos los clientes | mpv no lo reproduce. Último recurso: un mini-proxy SABR → HLS local siguiendo la librería [`googlevideo`](https://ytjs.dev/googlevideo/). Es mucho trabajo; hacerlo solo si llega a ser necesario |
+| Preprocesar `base.js` es demasiado lento en este CPU | Caché por versión, preprocesado en segundo plano, y la Fase 0 mide antes de comprometerse |
+| La GPU no da con `--vo=gpu` | `--vo=xv` (lo que ya usaban las referencias) |
+| VA-API no anda en esta GPU | Decodificación por software de H.264 ≤ 480p, que este CPU aguanta |
+| Slint por software se traba al hacer scroll | Tarjetas de tamaño fijo, `ListView` virtualizado, sin sombras ni desenfoques, probar femtovg |
+| mpv integrado (`--wid`) con problemas de foco o teclado | Arrancar con la ventana flotante, que es más simple; el modo integrado viene después |
+| glibc demasiado nueva en el binario | Compilar en Debian 11 y verificar con `objdump -T` el símbolo GLIBC más alto |
+| Una plataforma bloquea por región o VPN | Igual que hoy: avisarlo en el README y en el error |
+| Términos de uso de las plataformas | Solo contenido gratuito y sin DRM, sin descargas; dejarlo claro en el README |
+
+## 7. Orden sugerido y tiempos
+
+```
+Semana 1      Fase 0 + Fase 1
+Semana 2      Fase 2 (ya se pueden ver URLs en ventana flotante)
+Semanas 3–4   Fase 3 (TV gratis: primera versión usable)       → v0.1 AppImage (adelantar lo mínimo de la Fase 9)
+Semanas 5–7   Fase 4 (YouTube, con el solucionador JS)          → v0.2
+Semanas 8–9   Fase 5 (Twitch/Kick)                              → v0.3
+Semanas 10–11 Fase 6 (Música)                                   → v0.4
+Semana 12     Fase 7 (unificación)                              → v0.5
+Semana 13     Fase 8 (cuentas, opcional) + Fase 9 completa     → v1.0
+```
+
+Consejo: **armar el AppImage desde la v0.1** (aunque sea a mano) y usarlo a diario en la laptop.
+Los problemas de RAM y CPU aparecen ahí, no en la máquina de desarrollo.
+
+## 8. Fuentes (consultadas el 1 de noviembre de 2026)
+
+- [yt-dlp #15012: se necesita un motor JavaScript externo para tener soporte completo de YouTube](https://github.com/yt-dlp/yt-dlp/issues/15012) (noviembre de 2025)
+- [yt-dlp wiki: EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS): motores admitidos y advertencia de lentitud de QuickJS-NG anterior a 0.12
+- [yt-dlp/ejs](https://github.com/yt-dlp/ejs) y su [`main.ts`](https://github.com/yt-dlp/ejs/blob/main/src/yt/solver/main.ts): formato de entrada y salida, y `preprocessed_player`
+- [yt-dlp wiki: guía de PO tokens](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide): qué cliente necesita token; HLS de `web_safari` y directos
+- [yt-dlp #17348: `android_vr` ahora necesita PO token](https://github.com/yt-dlp/yt-dlp/issues/17348) (2026)
+- [CDisc-Music wiki: YouTube](https://github.com/valkdzx/CDisc-Music/wiki/YouTube): VisionOS como primer intento sin claves, y URLs atadas a la IP
+- [Pedido de VRChat de actualizar a yt-dlp 2026.08.19](https://feedback.vrchat.com/feature-requests/p/update-to-yt-dlp-20260819): `visionos` como cliente por defecto y sus problemas
+- [ytdlp-ejs (crate)](https://docs.rs/crate/ytdlp-ejs/0.1.1): versión en Rust de `ejs` (con SWC). Sirve de referencia, pero es muy nueva y pesa más
+- [rquickjs](https://github.com/DelSkayn/rquickjs): bindings de QuickJS-NG para Rust (MIT)
+- [googlevideo (SABR)](https://ytjs.dev/googlevideo/): referencia por si alguna vez hace falta implementar SABR
