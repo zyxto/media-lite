@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 use media_lite_core::paths;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::ipc::{Event, Ipc};
 
@@ -54,13 +54,13 @@ impl Default for Options {
     }
 }
 
-/// Qué pedir al cargar un archivo.
+/// Qué pedir al cargar un archivo, además de la URL.
+///
+/// No lleva opciones por archivo (como `start`): mpv 0.38 en adelante rechaza `loadfile` con un
+/// mapa de opciones en la posición que la app usaba («invalid parameter»). Para retomar, la app
+/// hace un `seek` cuando mpv confirma el archivo.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LoadOptions {
-    /// Segundos desde donde empezar (retomar).
-    pub start: Option<f64>,
-    /// Cabeceras HTTP que exige la fuente (Referer, User-Agent…).
-    pub headers: Vec<(String, String)>,
     /// Pista de audio separada (DASH: video y audio por separado).
     pub audio_url: Option<String>,
 }
@@ -169,24 +169,9 @@ impl Player {
 
     /// Carga un archivo o URL, reemplazando lo que se estaba viendo.
     pub fn load(&self, url: &str, options: &LoadOptions) -> std::io::Result<()> {
-        let mut per_file = serde_json::Map::new();
-        if let Some(start) = options.start {
-            per_file.insert("start".into(), json!(format!("{start:.3}")));
-        }
-        if !options.headers.is_empty() {
-            let joined: Vec<String> = options
-                .headers
-                .iter()
-                .map(|(k, v)| format!("{k}: {v}"))
-                .collect();
-            per_file.insert("http-header-fields".into(), json!(joined.join(",")));
-        }
-        self.ipc.command(&[
-            json!("loadfile"),
-            json!(url),
-            json!("replace"),
-            Value::Object(per_file),
-        ])?;
+        // Sin mapa de opciones: esta forma la aceptan todas las versiones de mpv.
+        self.ipc
+            .command(&[json!("loadfile"), json!(url), json!("replace")])?;
         if let Some(audio) = &options.audio_url {
             self.ipc
                 .command(&[json!("audio-add"), json!(audio), json!("select")])?;

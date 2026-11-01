@@ -76,6 +76,8 @@ pub struct Playback {
     pub started: bool,
     /// Segundos de video ya bajados por delante de la reproducción (`demuxer-cache-duration`).
     pub buffer_secs: Option<f64>,
+    /// Posición a la que saltar cuando mpv confirme el archivo: para retomar, o para seguir tras una recarga.
+    pub pending_seek: Option<f64>,
 }
 
 impl Playback {
@@ -116,6 +118,7 @@ impl Playback {
             countdown: None,
             started: false,
             buffer_secs: None,
+            pending_seek: None,
         }
     }
 }
@@ -246,8 +249,6 @@ fn start(
     let resume = history::find(&app.history.borrow(), item.platform, &item.id)
         .and_then(history::resume_point);
     let load = LoadOptions {
-        start: resume,
-        headers: Vec::new(),
         audio_url: source.audio_url.clone(),
     };
     let loaded = match app.player.borrow().as_ref() {
@@ -256,7 +257,7 @@ fn start(
     };
     match loaded {
         Ok(()) => {
-            let pb = Playback::new(
+            let mut pb = Playback::new(
                 item,
                 resume.unwrap_or(0.0),
                 source,
@@ -265,6 +266,8 @@ fn start(
                 index,
                 carry,
             );
+            // Retomar: el salto se hace cuando mpv confirme el archivo (ver `LoadOptions`).
+            pb.pending_seek = resume.filter(|t| *t > 0.0);
             *app.playback.borrow_mut() = Some(pb);
             // Todavía no está confirmado: mpv puede rechazarlo o no abrirlo. Se confirma al cargar.
             set_status(app, format!("Abriendo «{}»…", item.title));
@@ -392,13 +395,16 @@ fn apply(app: &Rc<App>, event: Event) {
             }
         }
         Event::FileLoaded => {
-            let title = app.playback.borrow_mut().as_mut().map(|pb| {
+            let confirmed = app.playback.borrow_mut().as_mut().map(|pb| {
                 pb.started = true;
                 pb.buffering = false;
                 pb.stall_since = None;
-                pb.title.clone()
+                (pb.title.clone(), pb.pending_seek.take())
             });
-            if let Some(title) = title {
+            if let Some((title, seek)) = confirmed {
+                if let (Some(at), Some(player)) = (seek, app.player.borrow().as_ref()) {
+                    let _ = player.seek(at, true);
+                }
                 set_status(app, format!("Reproduciendo «{title}»"));
             }
         }
@@ -475,8 +481,6 @@ fn check_stall(app: &Rc<App>) {
     log::info!("la imagen se trabó: se vuelve a cargar a {quality}p");
     let url = url_for(app, &source, quality);
     let load = LoadOptions {
-        start: Some(position),
-        headers: Vec::new(),
         audio_url: source.audio_url.clone(),
     };
     if let Some(player) = app.player.borrow().as_ref() {
@@ -488,6 +492,8 @@ fn check_stall(app: &Rc<App>) {
         pb.last_reload = Some(Instant::now());
         pb.last_progress = Instant::now();
         pb.buffering = true;
+        // Sigue desde donde se trabó, cuando mpv confirme la recarga.
+        pb.pending_seek = (position > 0.0).then_some(position);
     }
     set_status(app, format!("Se trabó la imagen: ahora en {quality}p"));
 }
