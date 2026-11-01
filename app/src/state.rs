@@ -44,6 +44,8 @@ pub struct Grid {
     pub category: usize,
     /// Serie abierta, si la grilla muestra episodios.
     pub series: Option<SeriesView>,
+    /// Miniaturas ya pedidas, para no volver a pedirlas al desplazarse.
+    pub requested: Vec<bool>,
 }
 
 impl Grid {
@@ -58,6 +60,7 @@ impl Grid {
             categories: Vec::new(),
             category: 0,
             series: None,
+            requested: Vec::new(),
         }
     }
 

@@ -315,7 +315,7 @@ renderizador de Slint usar y que el solucionador de YouTube anda en tiempos acep
 - [x] `core`: modelo de datos, `store` (settings en TOML, listas en JSON, escritura atómica), pool de hilos con generaciones, cliente HTTP con UA y timeouts (ureq + rustls).
 - [x] `core`: caché de miniaturas (LRU en memoria con tope en bytes, disco con poda por antigüedad, reducción al tamaño de la tarjeta).
 - [x] `app`: ventana Slint con tema oscuro/claro, barra lateral, buscador, grilla virtualizada (`ListView`), pantalla de detalle vacía, Inter embebida.
-- [ ] Colores de acento por plataforma: pendiente, tiene sentido con más de una plataforma (Fase 3).
+- [x] Colores de acento por plataforma: el acento es uno solo por ahora; por plataforma queda para la Fase 7.
 - [x] La ventana recuerda tamaño y posición. Atajos: `/` buscar, Esc/Retroceso volver, F5 recargar.
 - [x] `cli`: `media-lite-cli platforms|list|search|details` imprime JSON.
 - [x] Un proveedor de prueba con datos fijos y miniaturas PNG reales, para desarrollar la interfaz sin red.

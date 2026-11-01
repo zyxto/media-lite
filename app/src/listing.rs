@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use media_lite_core::thumbs::Thumb;
 use media_lite_core::{Category, Item, Kind, Season, Section};
-use slint::{Image, Model, Rgba8Pixel, SharedPixelBuffer, SharedString};
+use slint::{ComponentHandle, Image, Model, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
 use crate::state::{self, set_status, sync_chips, with_app, App, Grid, SeriesView};
 
@@ -29,8 +29,6 @@ pub fn load(app: &Rc<App>) {
     }
     set_status(app, "Cargando…");
 
-    let thumbs = app.thumbs.clone();
-    let images = app.images.clone();
     let shared_gen = app.generation.clone();
     app.pool.run(move || {
         let categories = match &query {
@@ -43,12 +41,6 @@ pub fn load(app: &Rc<App>) {
         };
         match result {
             Ok(page) => {
-                let urls: Vec<(usize, String)> = page
-                    .items
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, item)| item.thumb.clone().map(|url| (i, url)))
-                    .collect();
                 let status = match &query {
                     Some(q) => format!(
                         "{} · búsqueda «{}» · {} resultados",
@@ -72,23 +64,6 @@ pub fn load(app: &Rc<App>) {
                         }
                     });
                 });
-                for (index, url) in urls {
-                    let thumbs = thumbs.clone();
-                    let check = shared_gen.clone();
-                    images.run(move || {
-                        if check.current() != generation {
-                            return;
-                        }
-                        match thumbs.get(&url) {
-                            Ok(thumb) => {
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    with_app(|app| deliver_thumb(app, generation, index, thumb));
-                                });
-                            }
-                            Err(e) => log::debug!("miniatura descartada: {e}"),
-                        }
-                    });
-                }
             }
             Err(e) => {
                 let message = format!("No se pudo cargar: {e}");
@@ -118,6 +93,7 @@ pub fn show_listing(
         let mut grid = app.grid.borrow_mut();
         grid.listing = generation;
         grid.images = vec![None; items.len()];
+        grid.requested = vec![false; items.len()];
         grid.items = items;
         grid.categories = categories;
         grid.series = None;
@@ -130,6 +106,11 @@ pub fn show_listing(
         w.set_detail_open(false);
     }
     set_status(app, status);
+    visible_now(app);
+    // Gancho de desarrollo (prueba automática): MEDIA_LITE_OPEN=settings abre Ajustes.
+    if generation == 1 && std::env::var("MEDIA_LITE_OPEN").as_deref() == Ok("settings") {
+        crate::settings::open(app);
+    }
     // Gancho de desarrollo (prueba automática): abre el primer elemento del primer listado.
     if generation == 1 && std::env::var_os("MEDIA_LITE_AUTOPLAY").is_some() {
         if let Some(item) = first {
@@ -258,22 +239,19 @@ pub fn show_season(app: &Rc<App>, index: usize) {
     let Some(episodes) = episodes else {
         return;
     };
-    let (generation, urls) = {
+    let generation = {
         let mut grid = app.grid.borrow_mut();
         let generation = app.generation.next();
         grid.listing = generation;
         grid.images = vec![None; episodes.len()];
-        let urls: Vec<(usize, String)> = episodes
-            .iter()
-            .enumerate()
-            .filter_map(|(i, it)| it.thumb.clone().map(|u| (i, u)))
-            .collect();
+        grid.requested = vec![false; episodes.len()];
         grid.items = episodes;
         grid.rebuild();
-        (generation, urls)
+        generation
     };
     sync_chips(app);
-    schedule_thumbs(app, generation, urls);
+    let _ = generation;
+    visible_now(app);
 }
 
 /// Cierra la serie y vuelve a la lista de la sección.
@@ -309,11 +287,67 @@ pub fn chip_clicked(app: &Rc<App>, index: usize) {
     load(app);
 }
 
-/// Pide las miniaturas de una lista, con la generación para descartarlas si cambia la vista.
-fn schedule_thumbs(app: &Rc<App>, generation: u64, urls: Vec<(usize, String)>) {
+/// Filas de margen a cada lado de lo visible: se piden un poco antes de que aparezcan.
+const ROW_MARGIN: usize = 2;
+/// Altura de una fila de la grilla, en píxeles lógicos, para una tarjeta de `card_w` de ancho.
+fn row_height(card_w: f32) -> f32 {
+    card_w * 9.0 / 16.0 + 64.0
+}
+
+/// Calcula las filas visibles según el tamaño de la ventana, para el listado recién mostrado.
+fn visible_now(app: &Rc<App>) {
+    let Some(window) = app.weak.upgrade() else {
+        return;
+    };
+    let scale = window.window().scale_factor();
+    let size = window.window().size().to_logical(scale);
+    let columns = app.grid.borrow().columns.max(1) as f32;
+    let card_w =
+        (size.width - state::SIDEBAR - state::GUTTER - (columns - 1.0) * state::GAP) / columns;
+    // Encabezado, chips y barra del reproductor: unos 260 px no son de la grilla.
+    let grid_h = (size.height - 260.0).max(0.0);
+    let last = (grid_h / row_height(card_w)).ceil() as usize + 1;
+    visible_rows(app, 0, last);
+}
+
+/// Pide las miniaturas de las filas `first..=last` y libera las que quedaron lejos.
+pub fn visible_rows(app: &Rc<App>, first: usize, last: usize) {
+    let (generation, to_load) = {
+        let mut grid = app.grid.borrow_mut();
+        let cols = grid.columns.max(1);
+        let total_rows = grid.items.len().div_ceil(cols);
+        let keep_from = first.saturating_sub(ROW_MARGIN);
+        let keep_to = (last + ROW_MARGIN).min(total_rows.saturating_sub(1));
+        let mut to_load = Vec::new();
+        let mut touched = std::collections::BTreeSet::new();
+        for i in 0..grid.items.len() {
+            let row = i / cols;
+            if row >= keep_from && row <= keep_to {
+                if !grid.requested.get(i).copied().unwrap_or(true) {
+                    if let Some(url) = grid.items[i].thumb.clone() {
+                        grid.requested[i] = true;
+                        to_load.push((i, url));
+                    }
+                }
+            } else if grid.requested.get(i).copied().unwrap_or(false) {
+                grid.requested[i] = false;
+                if grid.images[i].take().is_some() {
+                    touched.insert(row);
+                }
+            }
+        }
+        for row in touched {
+            let data = grid.row(row);
+            grid.rows.set_row_data(row, data);
+        }
+        (grid.listing, to_load)
+    };
+    if to_load.is_empty() {
+        return;
+    }
     let thumbs = app.thumbs.clone();
     let check = app.generation.clone();
-    for (index, url) in urls {
+    for (index, url) in to_load {
         let thumbs = thumbs.clone();
         let check = check.clone();
         app.images.run(move || {

@@ -26,6 +26,12 @@ export struct CardData {
     index: int,
 }
 
+export struct SettingRow {
+    label: string,
+    value: string,
+    note: string,
+}
+
 export struct RowData {
     cards: [CardData],
 }
@@ -139,6 +145,70 @@ component PlayButton inherits Rectangle {
     }
 }
 
+// Fila de la pantalla de Ajustes: nombre y nota a la izquierda, valor a la derecha.
+component SettingRowView inherits Rectangle {
+    in property <SettingRow> data;
+    in property <int> index;
+    callback clicked(int);
+
+    height: 52px;
+    border-radius: 10px;
+    background: Theme.surface;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.data.label;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 600;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.data.note;
+                color: Theme.muted;
+                font-size: 11px;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+        }
+
+        Rectangle {
+            width: 170px;
+            height: 32px;
+            border-radius: 8px;
+            background: Theme.surface-hi;
+
+            Text {
+                text: root.data.value;
+                color: Theme.text;
+                font-size: 13px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+        }
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(root.index); }
+    }
+}
+
 // Chip de categoría o de temporada.
 component Chip inherits Rectangle {
     in property <string> label;
@@ -195,6 +265,8 @@ export component AppWindow inherits Window {
     in property <bool> play-paused;
     in property <string> play-status;
     in property <[string]> chips;
+    in property <bool> settings-open;
+    in property <[SettingRow]> settings-rows;
     in property <int> chip-index: 0;
     in property <bool> can-step-prev;
     in property <bool> can-step-next;
@@ -210,6 +282,9 @@ export component AppWindow inherits Window {
     callback prev-requested();
     callback next-requested();
     callback chip-clicked(int);
+    callback settings-requested();
+    callback visible-rows-changed(int, int);
+    callback setting-clicked(int);
 
     callback platform-clicked(int);
     callback section-clicked(int);
@@ -239,7 +314,7 @@ export component AppWindow inherits Window {
                 root.refresh-requested();
                 return accept;
             }
-            if ((event.text == Key.Escape || event.text == Key.Backspace) && root.detail-open) {
+            if ((event.text == Key.Escape || event.text == Key.Backspace) && (root.detail-open || root.settings-open)) {
                 root.back-requested();
                 return accept;
             }
@@ -317,6 +392,12 @@ export component AppWindow inherits Window {
 
                     Rectangle {
                         vertical-stretch: 1;
+                    }
+
+                    NavButton {
+                        label: "Ajustes";
+                        active: root.settings-open;
+                        clicked => { root.settings-requested(); }
                     }
 
                     NavButton {
@@ -411,8 +492,16 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if !root.detail-open : ListView {
+                if !root.detail-open && !root.settings-open : ListView {
                     vertical-stretch: 1;
+
+                    // Primera y última fila visibles: las miniaturas se piden solo para ellas.
+                    changed viewport-y => {
+                        root.visible-rows-changed(
+                            max(0, floor(-self.content-y / (root.card-width * 9 / 16 + 64px))),
+                            max(0, ceil((-self.content-y + self.visible-height) / (root.card-width * 9 / 16 + 64px)))
+                        );
+                    }
 
                     for row in root.rows : HorizontalLayout {
                         spacing: 16px;
@@ -543,6 +632,16 @@ export component AppWindow inherits Window {
                                 clicked => { root.stop-requested(); }
                             }
                         }
+                    }
+                }
+
+                if root.settings-open : ListView {
+                    vertical-stretch: 1;
+
+                    for row[i] in root.settings-rows : SettingRowView {
+                        data: row;
+                        index: i;
+                        clicked(index) => { root.setting-clicked(index); }
                     }
                 }
 

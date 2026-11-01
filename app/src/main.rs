@@ -6,6 +6,7 @@
 
 mod listing;
 mod playback;
+mod settings;
 mod state;
 
 use std::cell::RefCell;
@@ -191,9 +192,12 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         let app = app.clone();
         window.on_back_requested(move || {
+            let settings_open = app.weak.upgrade().is_some_and(|w| w.get_settings_open());
             let detail_open = app.grid.borrow().detail.is_some();
             let in_series = app.grid.borrow().series.is_some();
-            if detail_open {
+            if settings_open {
+                settings::close(&app);
+            } else if detail_open {
                 listing::close_detail(&app);
             } else if in_series {
                 listing::close_series(&app);
@@ -256,6 +260,20 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         let app = app.clone();
         window.on_subtitle_cycle_requested(move || playback::cycle_subtitles(&app));
+    }
+    {
+        let app = app.clone();
+        window.on_settings_requested(move || settings::open(&app));
+    }
+    {
+        let app = app.clone();
+        window.on_visible_rows_changed(move |first, last| {
+            listing::visible_rows(&app, first.max(0) as usize, last.max(0) as usize)
+        });
+    }
+    {
+        let app = app.clone();
+        window.on_setting_clicked(move |i| settings::click(&app, i as usize));
     }
     {
         let app = app.clone();
