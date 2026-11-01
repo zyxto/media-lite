@@ -89,8 +89,10 @@ fn handle(stream: TcpStream, state: &Shared) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() {
+        log::debug!("proxy: una conexión llegó sin pedido");
         return;
     }
+    log::debug!("proxy: pedido de mpv recibido");
     // Se descartan las cabeceras: no hacen falta.
     loop {
         let mut header = String::new();
@@ -108,8 +110,14 @@ fn handle(stream: TcpStream, state: &Shared) {
         .unwrap_or("")
         .to_string();
     match serve(&target, state) {
-        Ok(body) => respond(&mut stream, 200, "OK", body.as_bytes()),
-        Err(status) => respond(&mut stream, status, "Error", b""),
+        Ok(body) => {
+            log::debug!("proxy: playlist entregada a mpv ({} bytes)", body.len());
+            respond(&mut stream, 200, "OK", body.as_bytes());
+        }
+        Err(status) => {
+            log::warn!("proxy: pedido de mpv rechazado con {status}");
+            respond(&mut stream, status, "Error", b"");
+        }
     }
 }
 
@@ -145,7 +153,10 @@ fn serve(target: &str, state: &Shared) -> Result<String, u16> {
     if base.scheme() != "http" && base.scheme() != "https" {
         return Err(400);
     }
-    let text = fetch_text(&state.agent, &upstream).map_err(|_| 502u16)?;
+    let text = fetch_text(&state.agent, &upstream).map_err(|e| {
+        log::warn!("proxy: no se pudo bajar la playlist: {e}");
+        502u16
+    })?;
     let text = playlist::limit_variants(&text, max_height);
 
     // Las listas hijas siguen con los mismos filtros.

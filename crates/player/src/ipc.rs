@@ -83,6 +83,13 @@ fn read_loop(reader: UnixStream, tx: Sender<Event>) {
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        // Respuesta a un comando. Si mpv lo rechazó (p. ej. `loadfile`), no pasa nada más: se avisa.
+        if let Some(error) = value.get("error").and_then(Value::as_str) {
+            if error != "success" {
+                log::warn!("mpv rechazó un comando: {error}");
+            }
+            continue;
+        }
         if let Some(event) = parse_event(&value) {
             if tx.send(event).is_err() {
                 break;

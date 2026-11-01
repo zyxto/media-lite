@@ -36,6 +36,8 @@ pub struct Options {
     pub cache_mb: u32,
     /// Driver de audio. `None` deja el de mpv; `null` sirve para pruebas.
     pub ao: Option<String>,
+    /// Mensajes detallados de mpv (para diagnosticar). Salen por el registro de la app.
+    pub verbose: bool,
 }
 
 impl Default for Options {
@@ -47,6 +49,7 @@ impl Default for Options {
             low_video: false,
             cache_mb: 24,
             ao: None,
+            verbose: false,
         }
     }
 }
@@ -267,7 +270,10 @@ pub fn build_args(options: &Options, socket: &Path) -> Vec<String> {
         "--osc=no".to_string(),
         "--osd-level=1".to_string(),
         "--keep-open=no".to_string(),
-        "--msg-level=all=warn".to_string(),
+        format!(
+            "--msg-level={}",
+            if options.verbose { "all=v" } else { "all=warn" }
+        ),
         format!("--input-ipc-server={}", socket.display()),
         format!("--hwdec={}", options.hwdec),
         "--vd-lavc-skiploopfilter=all".to_string(),
@@ -361,6 +367,18 @@ mod tests {
     fn socket_path_is_short_enough_for_unix_sockets() {
         let path = socket_path();
         assert!(path.as_os_str().len() < 108, "{}", path.display());
+    }
+
+    #[test]
+    fn verbose_asks_mpv_for_details() {
+        let quiet = build_args(&Options::default(), Path::new("/tmp/s.sock"));
+        assert!(quiet.contains(&"--msg-level=all=warn".to_string()));
+        let opts = Options {
+            verbose: true,
+            ..Options::default()
+        };
+        let args = build_args(&opts, Path::new("/tmp/s.sock"));
+        assert!(args.contains(&"--msg-level=all=v".to_string()));
     }
 
     #[test]

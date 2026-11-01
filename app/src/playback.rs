@@ -64,6 +64,9 @@ pub struct Playback {
     pub stall_since: Option<Instant>,
     /// Última recarga por traba.
     pub last_reload: Option<Instant>,
+    /// Última vez que la posición avanzó (o se reanudó). Si no avanza sin pausa, la imagen está trabada,
+    /// aunque mpv no informe que espera datos.
+    pub last_progress: Instant,
     /// Lista de la que se abrió el video.
     pub queue: Vec<Item>,
     pub queue_index: usize,
@@ -107,6 +110,7 @@ impl Playback {
             max_height,
             stall_since: None,
             last_reload: None,
+            last_progress: Instant::now(),
             queue,
             queue_index: index,
             countdown: None,
@@ -262,7 +266,8 @@ fn start(
                 carry,
             );
             *app.playback.borrow_mut() = Some(pb);
-            set_status(app, format!("Reproduciendo «{}»", item.title));
+            // Todavía no está confirmado: mpv puede rechazarlo o no abrirlo. Se confirma al cargar.
+            set_status(app, format!("Abriendo «{}»…", item.title));
             sync_ui(app);
         }
         Err(e) => set_error(app, format!("No se pudo abrir el video: {e}")),
@@ -337,9 +342,21 @@ fn apply(app: &Rc<App>, event: Event) {
                 return;
             };
             match name.as_str() {
-                "time-pos" => pb.position = value.as_f64().unwrap_or(pb.position),
+                "time-pos" => {
+                    if let Some(pos) = value.as_f64() {
+                        if (pos - pb.position).abs() > 0.05 {
+                            pb.last_progress = Instant::now();
+                        }
+                        pb.position = pos;
+                    }
+                }
                 "duration" => pb.duration = value.as_f64().unwrap_or(pb.duration),
-                "pause" => pb.paused = value.as_bool().unwrap_or(pb.paused),
+                "pause" => {
+                    pb.paused = value.as_bool().unwrap_or(pb.paused);
+                    if !pb.paused {
+                        pb.last_progress = Instant::now();
+                    }
+                }
                 "core-idle" | "paused-for-cache" => {
                     let waiting = value.as_bool().unwrap_or(false);
                     pb.buffering = waiting;
@@ -375,10 +392,14 @@ fn apply(app: &Rc<App>, event: Event) {
             }
         }
         Event::FileLoaded => {
-            if let Some(pb) = app.playback.borrow_mut().as_mut() {
+            let title = app.playback.borrow_mut().as_mut().map(|pb| {
                 pb.started = true;
                 pb.buffering = false;
                 pb.stall_since = None;
+                pb.title.clone()
+            });
+            if let Some(title) = title {
+                set_status(app, format!("Reproduciendo «{title}»"));
             }
         }
         Event::EndFile { reason } => match reason.as_str() {
@@ -416,23 +437,41 @@ fn on_eof(app: &Rc<App>) {
 /// Si la imagen lleva demasiado esperando datos, vuelve a cargar el video en la misma posición
 /// con una calidad menor. Así un equipo lento termina viendo algo fluido en vez de congelado.
 fn check_stall(app: &Rc<App>) {
-    let reload = {
+    let trabado = {
         let guard = app.playback.borrow();
         let Some(pb) = guard.as_ref() else {
             return;
         };
-        let stalled = pb
+        // Espera datos (mpv lo informa) o la posición no avanza sin estar en pausa (mpv quedó en cero).
+        let waiting = pb
             .stall_since
             .is_some_and(|t| t.elapsed().as_secs_f64() >= STALL_LIMIT);
+        let frozen = !pb.paused && pb.last_progress.elapsed().as_secs_f64() >= STALL_LIMIT;
         let cooled = pb
             .last_reload
             .is_none_or(|t| t.elapsed().as_secs_f64() >= RELOAD_COOLDOWN);
-        if !(stalled && cooled) || pb.countdown.is_some() {
+        if !((waiting || frozen) && cooled) || pb.countdown.is_some() {
             return;
         }
-        (pb.source.clone(), pb.position, lower_quality(pb.max_height))
+        (pb.source.clone(), pb.position, pb.max_height, pb.started)
     };
-    let (source, position, quality) = reload;
+    let (source, position, max_height, started) = trabado;
+    let quality = lower_quality(max_height);
+    if quality == max_height {
+        // Ya está en el mínimo: volver a cargar no cambia nada. Se avisa para que pruebe otra cosa.
+        let text = if started {
+            format!("La imagen no avanza ni a {quality}p. Probá otra salida de video en Ajustes.")
+        } else {
+            "mpv no abrió el video. Revisá el registro (MEDIA_LITE_LOG=debug).".to_string()
+        };
+        log::info!("la imagen no avanza ni a {quality}p");
+        set_error(app, text);
+        if let Some(pb) = app.playback.borrow_mut().as_mut() {
+            pb.stall_since = None;
+            pb.last_progress = Instant::now();
+        }
+        return;
+    }
     log::info!("la imagen se trabó: se vuelve a cargar a {quality}p");
     let url = url_for(app, &source, quality);
     let load = LoadOptions {
@@ -447,6 +486,7 @@ fn check_stall(app: &Rc<App>) {
         pb.max_height = quality;
         pb.stall_since = None;
         pb.last_reload = Some(Instant::now());
+        pb.last_progress = Instant::now();
         pb.buffering = true;
     }
     set_status(app, format!("Se trabó la imagen: ahora en {quality}p"));
@@ -516,6 +556,8 @@ pub fn toggle_pause(app: &Rc<App>) {
     if let Some(pb) = app.playback.borrow_mut().as_mut() {
         pb.paused = !paused;
         pb.countdown = None;
+        // La pausa no cuenta como traba: el reloj de avance arranca al reanudar.
+        pb.last_progress = Instant::now();
     }
     sync_ui(app);
 }
@@ -680,6 +722,8 @@ fn options_for(settings: &Settings) -> Options {
         low_video: settings.low_video,
         cache_mb: CACHE_MB,
         ao: None,
+        // Con `MEDIA_LITE_LOG=debug` mpv también escribe sus mensajes detallados en el registro.
+        verbose: log::log_enabled!(log::Level::Debug),
     }
 }
 
