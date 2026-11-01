@@ -331,6 +331,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
                 if let Some(w) = app.weak.upgrade() {
                     w.set_columns(columns as i32);
                 }
+                state::sync_skeleton(&app);
             }
         });
     }

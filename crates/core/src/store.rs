@@ -41,8 +41,9 @@ impl Default for Settings {
         Settings {
             theme_dark: true,
             renderer: "winit-software".to_string(),
-            window_width: 1100,
-            window_height: 720,
+            // Entra en una pantalla de 768 px de alto (notebooks), con la barra de título.
+            window_width: 1024,
+            window_height: 640,
             window_x: None,
             window_y: None,
             quality: 480,

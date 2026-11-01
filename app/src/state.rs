@@ -15,7 +15,7 @@ use media_lite_providers::Provider;
 use slint::{Image, ModelRc, SharedString, VecModel, Weak};
 
 use crate::playback::Playback;
-use crate::{AppWindow, CardData, RowData};
+use crate::{Activity, AppWindow, CardData, RowData};
 
 /// Ancho mínimo de una tarjeta; define cuántas columnas caben (la misma cuenta que en Slint).
 pub const CARD_MIN_WIDTH: f32 = 240.0;
@@ -169,6 +169,31 @@ pub fn with_app<R>(f: impl FnOnce(&Rc<App>) -> R) -> Option<R> {
 pub fn set_status(app: &App, text: impl Into<SharedString>) {
     if let Some(w) = app.weak.upgrade() {
         w.set_status(text.into());
+        w.set_status_error(false);
+    }
+}
+
+/// Pone un error en la barra de estado, en color de alerta, hasta el próximo mensaje.
+pub fn set_error(app: &App, text: impl Into<SharedString>) {
+    if let Some(w) = app.weak.upgrade() {
+        w.set_status(text.into());
+        w.set_status_error(true);
+    }
+}
+
+/// Lugares del esqueleto de carga: uno por columna de la grilla. Se llama al cambiar el ancho.
+pub fn sync_skeleton(app: &App) {
+    let columns = app.grid.borrow().columns;
+    if let Some(w) = app.weak.upgrade() {
+        let slots: Vec<i32> = (0..columns as i32).collect();
+        w.set_skeleton_slots(ModelRc::new(VecModel::from(slots)));
+    }
+}
+
+/// Lo que la app está cargando: muestra la barra de progreso y, si es un catálogo, el esqueleto.
+pub fn set_activity(app: &App, activity: Activity) {
+    if let Some(w) = app.weak.upgrade() {
+        w.set_activity(activity);
     }
 }
 

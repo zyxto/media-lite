@@ -40,9 +40,9 @@ pub fn load(app: &Rc<App>) {
         return;
     };
     let generation = app.generation.next();
-    if let Some(w) = app.weak.upgrade() {
-        w.set_busy(true);
-    }
+    // Mientras carga, la grilla queda vacía: se ve el esqueleto y no el listado anterior.
+    clear_grid(app);
+    state::set_activity(app, crate::Activity::Catalog);
     set_status(app, "Cargando…");
 
     let shared_gen = app.generation.clone();
@@ -76,6 +76,7 @@ pub fn load(app: &Rc<App>) {
                 let _ = slint::invoke_from_event_loop(move || {
                     with_app(|app| {
                         if check.current() == generation {
+                            state::set_activity(app, crate::Activity::Idle);
                             show_listing(app, generation, items, categories, status);
                         }
                     });
@@ -87,7 +88,9 @@ pub fn load(app: &Rc<App>) {
                 let _ = slint::invoke_from_event_loop(move || {
                     with_app(|app| {
                         if check.current() == generation {
-                            show_listing(app, generation, Vec::new(), Vec::new(), message);
+                            state::set_activity(app, crate::Activity::Idle);
+                            show_listing(app, generation, Vec::new(), Vec::new(), message.clone());
+                            state::set_error(app, message);
                         }
                     });
                 });
@@ -108,6 +111,7 @@ pub fn global_search(app: &Rc<App>, query: String) {
         format!("Buscando «{query}» en todas las plataformas…"),
     );
     app.grid.borrow_mut().pending = app.providers.len();
+    state::set_activity(app, crate::Activity::Catalog);
     let providers = app.providers.clone();
     for provider in providers {
         let query = query.clone();
@@ -143,6 +147,9 @@ pub fn global_search(app: &Rc<App>, query: String) {
                         grid.pending
                     };
                     append_items(app, generation, found);
+                    if pending == 0 {
+                        state::set_activity(app, crate::Activity::Idle);
+                    }
                     let count = app.grid.borrow().items.len();
                     let status = if pending == 0 {
                         format!("Búsqueda «{query}» en todas las plataformas · {count} resultados")
@@ -175,6 +182,25 @@ fn append_items(app: &Rc<App>, generation: u64, items: Vec<Item>) {
     visible_now(app);
 }
 
+/// Vacía la grilla sin mostrar mensajes: mientras carga, lo que se ve es el esqueleto.
+fn clear_grid(app: &App) {
+    {
+        let mut grid = app.grid.borrow_mut();
+        grid.items.clear();
+        grid.images.clear();
+        grid.requested.clear();
+        grid.categories.clear();
+        grid.series = None;
+        grid.detail = None;
+        grid.rebuild();
+    }
+    sync_chips(app);
+    state::sync_skeleton(app);
+    if let Some(w) = app.weak.upgrade() {
+        w.set_empty_message(SharedString::new());
+    }
+}
+
 /// Hilo principal: muestra el listado nuevo y descarta las miniaturas que quedaron de antes.
 pub fn show_listing(
     app: &Rc<App>,
@@ -184,6 +210,12 @@ pub fn show_listing(
     status: String,
 ) {
     let first = items.first().cloned();
+    // Si no hay elementos, el mensaje de la barra también se muestra en el centro de la grilla.
+    let empty_message = if items.is_empty() {
+        status.clone()
+    } else {
+        String::new()
+    };
     {
         let mut grid = app.grid.borrow_mut();
         grid.listing = generation;
@@ -197,7 +229,7 @@ pub fn show_listing(
     }
     sync_chips(app);
     if let Some(w) = app.weak.upgrade() {
-        w.set_busy(false);
+        w.set_empty_message(empty_message.into());
         w.set_detail_open(false);
     }
     set_status(app, status);
@@ -297,16 +329,26 @@ pub fn open_series(app: &Rc<App>, series: Item) {
     else {
         return;
     };
-    set_status(app, format!("Cargando «{}»…", series.title));
     let check = app.generation.clone();
     let generation = app.generation.next();
+    clear_grid(app);
+    state::set_activity(app, crate::Activity::Catalog);
+    set_status(app, format!("Cargando «{}»…", series.title));
     app.pool.run(move || {
         let result = provider.seasons(&series);
         let _ = slint::invoke_from_event_loop(move || {
             with_app(|app| match result {
-                Ok(seasons) if check.current() == generation => show_series(app, series, seasons),
-                Ok(_) => {}
-                Err(e) => set_status(app, format!("No se pudo abrir la serie: {e}")),
+                Ok(seasons) if check.current() == generation => {
+                    state::set_activity(app, crate::Activity::Idle);
+                    show_series(app, series, seasons);
+                }
+                Err(e) if check.current() == generation => {
+                    state::set_activity(app, crate::Activity::Idle);
+                    let message = format!("No se pudo abrir la serie: {e}");
+                    show_listing(app, generation, Vec::new(), Vec::new(), message.clone());
+                    state::set_error(app, message);
+                }
+                _ => {}
             });
         });
     });

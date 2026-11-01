@@ -6,15 +6,30 @@ import { ListView, ScrollView } from "std-widgets.slint";
 import "../assets/fonts/Inter-Regular.ttf";
 import "../assets/fonts/Inter-SemiBold.ttf";
 
+// Qué está haciendo la app mientras no hay un video reproduciéndose. Lo fija Rust.
+export enum Activity {
+    idle,
+    // Pidiendo un listado, una búsqueda o las temporadas de una serie.
+    catalog,
+    // Pidiendo la fuente de un video, antes de que mpv se abra.
+    preparing,
+}
+
+// Escala de espacios: 4, 8, 12, 16 y 24 px. Tipos: 11, 12, 13, 14, 18 y 22 px.
+// Los estados (hover, pulsado) salen de aclarar u oscurecer el color base.
 export global Theme {
     in-out property <bool> dark: true;
     out property <color> bg: dark ? #0f1115 : #f2f3f6;
     out property <color> side: dark ? #14171d : #e4e7ee;
     out property <color> surface: dark ? #1b1f28 : #ffffff;
     out property <color> surface-hi: dark ? #272d39 : #d9dde7;
+    out property <color> hover: dark ? #222733 : #e9ecf3;
     out property <color> text: dark ? #e9ebf1 : #15171c;
     out property <color> muted: dark ? #8d95a7 : #5a6273;
     out property <color> accent: #7c9cff;
+    out property <color> accent-hover: accent.brighter(0.15);
+    out property <color> accent-press: accent.darker(0.2);
+    out property <color> error: dark ? #ff8a80 : #c62828;
     out property <length> radius: 10px;
 }
 
@@ -36,6 +51,7 @@ export struct RowData {
     cards: [CardData],
 }
 
+// Entrada de la barra lateral. Marca la activa con una franja a la izquierda y se aclara al pasar el mouse.
 component NavButton inherits Rectangle {
     in property <string> label;
     in property <bool> active;
@@ -43,11 +59,24 @@ component NavButton inherits Rectangle {
 
     height: 34px;
     border-radius: 8px;
-    background: root.active ? Theme.surface-hi : transparent;
+    background: root.active ? Theme.surface-hi
+        : touch.pressed ? Theme.surface-hi
+        : touch.has-hover ? Theme.hover
+        : transparent;
+    animate background { duration: 120ms; }
+
+    Rectangle {
+        x: 0px;
+        y: parent.height * 0.25;
+        width: 3px;
+        height: parent.height * 0.5;
+        border-radius: 2px;
+        background: root.active ? Theme.accent : transparent;
+    }
 
     Text {
-        x: 12px;
-        width: parent.width - 24px;
+        x: 14px;
+        width: parent.width - 26px;
         height: parent.height;
         text: root.label;
         color: root.active ? Theme.text : Theme.muted;
@@ -57,9 +86,10 @@ component NavButton inherits Rectangle {
         overflow: elide;
     }
 
-    TouchArea {
+    touch := TouchArea {
         width: parent.width;
         height: parent.height;
+        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
@@ -80,6 +110,9 @@ component CardView inherits Rectangle {
             border-radius: Theme.radius;
             clip: true;
             background: Theme.surface-hi;
+            border-width: touch.has-hover ? 2px : 0px;
+            border-color: Theme.accent;
+            animate border-width { duration: 120ms; }
 
             Image {
                 width: parent.width;
@@ -87,6 +120,35 @@ component CardView inherits Rectangle {
                 source: root.data.thumb;
                 image-fit: cover;
                 visible: root.data.has-thumb;
+            }
+
+            // Al pasar el mouse: un velo con la acción, así se ve qué tarjeta es la que se va a abrir.
+            Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: touch.pressed ? #000000a0 : #00000040;
+                opacity: touch.has-hover ? 1 : 0;
+                animate opacity { duration: 120ms; }
+
+                Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 64px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: Theme.accent;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "Abrir";
+                        color: #ffffff;
+                        font-size: 12px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
             }
         }
 
@@ -108,26 +170,74 @@ component CardView inherits Rectangle {
         }
     }
 
-    TouchArea {
+    touch := TouchArea {
         width: parent.width;
         height: parent.height;
+        mouse-cursor: pointer;
         clicked => { root.activated(); }
     }
 }
 
+// Marcador de una tarjeta mientras carga el catálogo. Pulsa al mismo ritmo que el resto.
+component CardSkeleton inherits Rectangle {
+    in property <length> card-width;
+    in property <bool> pulse;
+
+    width: root.card-width;
+    height: root.card-width * 9 / 16 + 48px;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        Rectangle {
+            height: root.card-width * 9 / 16;
+            border-radius: Theme.radius;
+            background: Theme.surface-hi;
+            opacity: root.pulse ? 0.45 : 1;
+            animate opacity { duration: 700ms; easing: ease-in-out; }
+        }
+
+        Rectangle {
+            height: 12px;
+            width: parent.width * 0.8;
+            border-radius: 4px;
+            background: Theme.surface-hi;
+            opacity: root.pulse ? 0.45 : 1;
+            animate opacity { duration: 700ms; easing: ease-in-out; }
+        }
+
+        Rectangle {
+            height: 10px;
+            width: parent.width * 0.5;
+            border-radius: 4px;
+            background: Theme.surface-hi;
+            opacity: root.pulse ? 0.45 : 1;
+            animate opacity { duration: 700ms; easing: ease-in-out; }
+        }
+    }
+}
+
+// Botón de acción. Primario o secundario; se deshabilita con `available`.
 component PlayButton inherits Rectangle {
     in property <string> label;
     in property <bool> primary: false;
     in property <bool> available: true;
     callback clicked();
 
+    min-width: 64px;
     height: 34px;
     border-radius: 8px;
-    background: root.primary ? Theme.accent : Theme.surface-hi;
+    background: !root.available ? Theme.surface-hi
+        : root.primary ? (touch.pressed ? Theme.accent-press : touch.has-hover ? Theme.accent-hover : Theme.accent)
+        : touch.pressed ? Theme.surface
+        : touch.has-hover ? Theme.hover
+        : Theme.surface-hi;
     opacity: root.available ? 1 : 0.4;
+    animate background { duration: 120ms; }
 
     Text {
-        width: parent.width;
+        x: 2px;
+        width: parent.width - 4px;
         height: parent.height;
         text: root.label;
         color: root.primary ? #ffffff : Theme.text;
@@ -135,12 +245,15 @@ component PlayButton inherits Rectangle {
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
+        wrap: no-wrap;
+        overflow: elide;
     }
 
-    TouchArea {
+    touch := TouchArea {
         width: parent.width;
         height: parent.height;
         enabled: root.available;
+        mouse-cursor: root.available ? pointer : default;
         clicked => { root.clicked(); }
     }
 }
@@ -153,7 +266,8 @@ component SettingRowView inherits Rectangle {
 
     height: 52px;
     border-radius: 10px;
-    background: Theme.surface;
+    background: touch.pressed ? Theme.surface-hi : touch.has-hover ? Theme.hover : Theme.surface;
+    animate background { duration: 120ms; }
 
     HorizontalLayout {
         padding-left: 16px;
@@ -184,12 +298,15 @@ component SettingRowView inherits Rectangle {
         }
 
         Rectangle {
-            width: 170px;
+            width: 150px;
             height: 32px;
             border-radius: 8px;
             background: Theme.surface-hi;
 
             Text {
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
                 text: root.data.value;
                 color: Theme.text;
                 font-size: 13px;
@@ -202,9 +319,10 @@ component SettingRowView inherits Rectangle {
         }
     }
 
-    TouchArea {
+    touch := TouchArea {
         width: parent.width;
         height: parent.height;
+        mouse-cursor: pointer;
         clicked => { root.clicked(root.index); }
     }
 }
@@ -218,7 +336,11 @@ component Chip inherits Rectangle {
     height: 30px;
     width: label-text.preferred-width + 24px;
     border-radius: 15px;
-    background: root.active ? Theme.accent : Theme.surface;
+    background: root.active ? Theme.accent
+        : touch.pressed ? Theme.surface-hi
+        : touch.has-hover ? Theme.hover
+        : Theme.surface;
+    animate background { duration: 120ms; }
 
     label-text := Text {
         x: 12px;
@@ -230,9 +352,10 @@ component Chip inherits Rectangle {
         vertical-alignment: center;
     }
 
-    TouchArea {
+    touch := TouchArea {
         width: parent.width;
         height: parent.height;
+        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
@@ -241,10 +364,11 @@ export component AppWindow inherits Window {
     title: "media-lite";
     background: Theme.bg;
     default-font-family: "Inter";
-    preferred-width: 1100px;
-    preferred-height: 720px;
-    min-width: 860px;
-    min-height: 460px;
+    preferred-width: 1024px;
+    preferred-height: 640px;
+    // Lo mínimo para que quepan los nueve controles del reproductor en una fila sin cortar el texto.
+    min-width: 940px;
+    min-height: 440px;
 
     in property <[string]> platforms;
     in property <int> platform-index: 0;
@@ -253,7 +377,10 @@ export component AppWindow inherits Window {
     in property <[RowData]> rows;
     in property <int> columns: 4;
     in property <string> status;
-    in property <bool> busy;
+    in property <bool> status-error;
+    in property <Activity> activity: Activity.idle;
+    // Texto centrado cuando la lista está vacía o falló (ej.: «No se pudo cargar…»).
+    in property <string> empty-message;
     in property <bool> detail-open;
     in property <string> detail-title;
     in property <string> detail-subtitle;
@@ -263,6 +390,7 @@ export component AppWindow inherits Window {
     in property <string> play-time;
     in property <float> play-progress;
     in property <bool> play-paused;
+    in property <bool> play-buffering;
     in property <string> play-status;
     in property <[string]> chips;
     in property <bool> settings-open;
@@ -300,6 +428,17 @@ export component AppWindow inherits Window {
     callback width-changed(float);
 
     property <length> card-width: (root.width - 200px - 40px - (root.columns - 1) * 16px) / root.columns;
+    // Lugares del esqueleto: uno por columna. Lo fija Rust (ver `state::sync_skeleton`).
+    in property <[int]> skeleton-slots;
+    // Alterna cada 700 ms mientras algo carga o se está bufferizando: mueve la barra y pulsa los esqueletos.
+    property <bool> pulse;
+    property <bool> loading: root.activity != Activity.idle;
+
+    Timer {
+        interval: 700ms;
+        running: root.loading || root.play-buffering;
+        triggered => { root.pulse = !root.pulse; }
+    }
 
     forward-focus: keys;
 
@@ -349,7 +488,7 @@ export component AppWindow inherits Window {
         }
 
         HorizontalLayout {
-            // Barra lateral
+            // Barra lateral: la navegación se desplaza si no entra; Ajustes y Tema quedan siempre abajo.
             Rectangle {
                 width: 200px;
                 background: Theme.side;
@@ -366,62 +505,71 @@ export component AppWindow inherits Window {
                         height: 32px;
                     }
 
-                    Text {
-                        text: "PLATAFORMAS";
-                        color: Theme.muted;
-                        font-size: 11px;
-                        height: 26px;
-                        vertical-alignment: bottom;
-                    }
+                    ScrollView {
+                        vertical-stretch: 1;
 
-                    for name[i] in root.platforms : NavButton {
-                        label: name;
-                        active: i == root.platform-index;
-                        clicked => { root.platform-clicked(i); }
-                    }
+                        VerticalLayout {
+                            spacing: 4px;
 
-                    Text {
-                        text: "SECCIONES";
-                        color: Theme.muted;
-                        font-size: 11px;
-                        height: 26px;
-                        vertical-alignment: bottom;
-                    }
+                            Text {
+                                text: "PLATAFORMAS";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                height: 26px;
+                                vertical-alignment: bottom;
+                            }
 
-                    for name[i] in root.sections : NavButton {
-                        label: name;
-                        active: i == root.section-index;
-                        clicked => { root.section-clicked(i); }
+                            for name[i] in root.platforms : NavButton {
+                                label: name;
+                                active: i == root.platform-index;
+                                clicked => { root.platform-clicked(i); }
+                            }
+
+                            Text {
+                                text: "SECCIONES";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                height: 26px;
+                                vertical-alignment: bottom;
+                            }
+
+                            for name[i] in root.sections : NavButton {
+                                label: name;
+                                active: i == root.section-index;
+                                clicked => { root.section-clicked(i); }
+                            }
+
+                            Text {
+                                text: "BIBLIOTECA";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                height: 26px;
+                                vertical-alignment: bottom;
+                            }
+
+                            NavButton {
+                                label: "Inicio";
+                                active: root.library-index == 0;
+                                clicked => { root.library-clicked(0); }
+                            }
+
+                            NavButton {
+                                label: "Historial";
+                                active: root.library-index == 1;
+                                clicked => { root.library-clicked(1); }
+                            }
+
+                            NavButton {
+                                label: "Favoritos";
+                                active: root.library-index == 2;
+                                clicked => { root.library-clicked(2); }
+                            }
+                        }
                     }
 
                     Rectangle {
-                        vertical-stretch: 1;
-                    }
-
-                    Text {
-                        text: "BIBLIOTECA";
-                        color: Theme.muted;
-                        font-size: 11px;
-                        height: 26px;
-                        vertical-alignment: bottom;
-                    }
-
-                    NavButton {
-                        label: "Inicio";
-                        active: root.library-index == 0;
-                        clicked => { root.library-clicked(0); }
-                    }
-
-                    NavButton {
-                        label: "Historial";
-                        active: root.library-index == 1;
-                        clicked => { root.library-clicked(1); }
-                    }
-
-                    NavButton {
-                        label: "Favoritos";
-                        active: root.library-index == 2;
-                        clicked => { root.library-clicked(2); }
+                        height: 1px;
+                        background: Theme.surface-hi;
                     }
 
                     NavButton {
@@ -441,7 +589,7 @@ export component AppWindow inherits Window {
             // Contenido
             VerticalLayout {
                 padding: 20px;
-                spacing: 14px;
+                spacing: 8px;
 
                 HorizontalLayout {
                     spacing: 12px;
@@ -478,8 +626,9 @@ export component AppWindow inherits Window {
 
                     Rectangle {
                         width: 40px;
-                        background: Theme.surface;
+                        background: refresh-touch.pressed ? Theme.surface-hi : refresh-touch.has-hover ? Theme.hover : Theme.surface;
                         border-radius: 8px;
+                        animate background { duration: 120ms; }
 
                         Text {
                             text: "⟳";
@@ -489,17 +638,37 @@ export component AppWindow inherits Window {
                             vertical-alignment: center;
                         }
 
-                        TouchArea {
+                        refresh-touch := TouchArea {
                             width: parent.width;
                             height: parent.height;
+                            mouse-cursor: pointer;
                             clicked => { root.refresh-requested(); }
                         }
                     }
                 }
 
+                // Barra de carga: siempre reserva su lugar (sin saltos) y se desliza mientras algo carga.
+                Rectangle {
+                    height: 3px;
+                    border-radius: 2px;
+                    clip: true;
+                    background: Theme.surface-hi;
+                    opacity: root.loading ? 1 : 0;
+                    animate opacity { duration: 200ms; }
+
+                    Rectangle {
+                        width: parent.width * 0.25;
+                        height: parent.height;
+                        border-radius: 2px;
+                        background: Theme.accent;
+                        x: root.pulse ? parent.width * 0.75 : 0px;
+                        animate x { duration: 700ms; easing: ease-in-out; }
+                    }
+                }
+
                 Text {
                     text: root.status;
-                    color: Theme.muted;
+                    color: root.status-error ? Theme.error : Theme.muted;
                     font-size: 12px;
                     height: 16px;
                     wrap: no-wrap;
@@ -522,41 +691,186 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if !root.detail-open && !root.settings-open : ListView {
+                // Área de contenido: un solo lugar donde se muestra la grilla, los ajustes, el detalle,
+                // el esqueleto de carga o el mensaje de lista vacía.
+                Rectangle {
                     vertical-stretch: 1;
+                    clip: true;
 
-                    // Primera y última fila visibles: las miniaturas se piden solo para ellas.
-                    changed viewport-y => {
-                        root.visible-rows-changed(
-                            max(0, floor(-self.content-y / (root.card-width * 9 / 16 + 64px))),
-                            max(0, ceil((-self.content-y + self.visible-height) / (root.card-width * 9 / 16 + 64px)))
-                        );
+                    if !root.detail-open && !root.settings-open : ListView {
+                        width: parent.width;
+                        height: parent.height;
+
+                        // Primera y última fila visibles: las miniaturas se piden solo para ellas.
+                        changed viewport-y => {
+                            root.visible-rows-changed(
+                                max(0, floor(-self.content-y / (root.card-width * 9 / 16 + 64px))),
+                                max(0, ceil((-self.content-y + self.visible-height) / (root.card-width * 9 / 16 + 64px)))
+                            );
+                        }
+
+                        for row in root.rows : HorizontalLayout {
+                            spacing: 16px;
+                            height: root.card-width * 9 / 16 + 48px + 16px;
+
+                            for card in row.cards : CardView {
+                                card-width: root.card-width;
+                                data: card;
+                                activated => { root.card-clicked(card.index); }
+                            }
+                        }
                     }
 
-                    for row in root.rows : HorizontalLayout {
+                    if root.activity == Activity.catalog && root.rows.length == 0 && !root.detail-open && !root.settings-open : VerticalLayout {
+                        width: parent.width;
                         spacing: 16px;
-                        height: root.card-width * 9 / 16 + 48px + 16px;
 
-                        for card in row.cards : CardView {
-                            card-width: root.card-width;
-                            data: card;
-                            activated => { root.card-clicked(card.index); }
+                        for line in [0, 1] : HorizontalLayout {
+                            spacing: 16px;
+
+                            for slot in root.skeleton-slots : CardSkeleton {
+                                card-width: root.card-width;
+                                pulse: root.pulse;
+                            }
+                        }
+                    }
+
+                    if root.activity == Activity.idle && root.rows.length == 0 && root.empty-message != "" && !root.detail-open && !root.settings-open : VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        alignment: center;
+                        spacing: 12px;
+
+                        Text {
+                            text: root.empty-message;
+                            color: root.status-error ? Theme.error : Theme.muted;
+                            font-size: 14px;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+
+                        if root.status-error : HorizontalLayout {
+                            alignment: center;
+
+                            PlayButton {
+                                label: "Reintentar";
+                                primary: true;
+                                width: 130px;
+                                clicked => { root.refresh-requested(); }
+                            }
+                        }
+                    }
+
+                    if root.settings-open : ListView {
+                        width: parent.width;
+                        height: parent.height;
+
+                        for row[i] in root.settings-rows : SettingRowView {
+                            data: row;
+                            index: i;
+                            clicked(index) => { root.setting-clicked(index); }
+                        }
+                    }
+
+                    if root.detail-open : Rectangle {
+                        width: parent.width;
+                        height: parent.height;
+                        background: Theme.surface;
+                        border-radius: 12px;
+                        clip: true;
+
+                        ScrollView {
+                            width: parent.width;
+                            height: parent.height;
+
+                            VerticalLayout {
+                                padding: 24px;
+                                padding-right: 36px;
+                                spacing: 12px;
+
+                                HorizontalLayout {
+                                    alignment: start;
+
+                                    PlayButton {
+                                        label: "← Volver";
+                                        width: 120px;
+                                        clicked => { root.back-requested(); }
+                                    }
+                                }
+
+                                Text {
+                                    text: root.detail-title;
+                                    color: Theme.text;
+                                    font-size: 22px;
+                                    font-weight: 700;
+                                    wrap: word-wrap;
+                                }
+
+                                Text {
+                                    text: root.detail-subtitle;
+                                    color: Theme.muted;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    alignment: start;
+
+                                    PlayButton {
+                                        label: root.activity == Activity.preparing ? "Preparando…" : "Reproducir";
+                                        primary: true;
+                                        available: root.activity != Activity.preparing;
+                                        width: 160px;
+                                        clicked => { root.play-requested(); }
+                                    }
+
+                                    PlayButton {
+                                        label: root.detail-favorite ? "Quitar de favoritos" : "Agregar a favoritos";
+                                        width: 200px;
+                                        clicked => { root.favorite-requested(); }
+                                    }
+                                }
+
+                                Text {
+                                    text: root.detail-text;
+                                    color: Theme.text;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+                            }
                         }
                     }
                 }
 
                 // Barra del reproductor (mpv corre en su propia ventana; esto controla mpv).
                 if root.playing : Rectangle {
-                    height: 96px;
+                    height: 108px;
                     background: Theme.surface;
                     border-radius: 12px;
 
                     VerticalLayout {
                         padding: 10px;
-                        spacing: 6px;
+                        spacing: 8px;
 
                         HorizontalLayout {
-                            spacing: 10px;
+                            spacing: 8px;
+
+                            // Punto que pulsa mientras el buffer se llena (centrado con el título).
+                            Rectangle {
+                                width: 8px;
+                                height: 18px;
+
+                                Rectangle {
+                                    y: 5px;
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: Theme.accent;
+                                    opacity: root.play-buffering ? (root.pulse ? 0.25 : 1) : 0;
+                                    animate opacity { duration: 700ms; easing: ease-in-out; }
+                                }
+                            }
 
                             Text {
                                 horizontal-stretch: 1;
@@ -570,8 +884,8 @@ export component AppWindow inherits Window {
 
                             Text {
                                 text: root.play-status + "   " + root.play-time;
-                                color: Theme.muted;
-                                font-size: 11px;
+                                color: root.play-buffering ? Theme.accent : Theme.muted;
+                                font-size: 12px;
                                 wrap: no-wrap;
                             }
                         }
@@ -587,6 +901,8 @@ export component AppWindow inherits Window {
                                 height: parent.height;
                                 border-radius: 3px;
                                 background: Theme.accent;
+                                opacity: root.play-buffering ? (root.pulse ? 0.45 : 1) : 1;
+                                animate opacity { duration: 700ms; easing: ease-in-out; }
                             }
 
                             TouchArea {
@@ -594,6 +910,7 @@ export component AppWindow inherits Window {
                                 y: -6px;
                                 width: parent.width;
                                 height: parent.height + 12px;
+                                mouse-cursor: pointer;
                                 pointer-event(event) => {
                                     if (event.kind == PointerEventKind.down) {
                                         root.seek-to-requested(self.mouse-x / self.width);
@@ -608,145 +925,59 @@ export component AppWindow inherits Window {
                             PlayButton {
                                 label: root.play-paused ? "Seguir" : "Pausa";
                                 primary: true;
-                                width: 74px;
+                                horizontal-stretch: 2;
                                 clicked => { root.toggle-pause-requested(); }
                             }
 
                             PlayButton {
                                 label: "−10 s";
-                                width: 58px;
+                                horizontal-stretch: 1;
                                 clicked => { root.seek-requested(-10); }
                             }
 
                             PlayButton {
                                 label: "+10 s";
-                                width: 58px;
+                                horizontal-stretch: 1;
                                 clicked => { root.seek-requested(10); }
                             }
 
                             PlayButton {
                                 label: "Anterior";
-                                width: 76px;
+                                horizontal-stretch: 1;
                                 available: root.can-step-prev;
                                 clicked => { root.prev-requested(); }
                             }
 
                             PlayButton {
                                 label: "Siguiente";
-                                width: 80px;
+                                horizontal-stretch: 1;
                                 available: root.can-step-next;
                                 clicked => { root.next-requested(); }
                             }
 
                             PlayButton {
                                 label: "Idioma";
-                                width: 62px;
+                                horizontal-stretch: 1;
                                 clicked => { root.audio-cycle-requested(); }
                             }
 
                             PlayButton {
                                 label: "Subs";
-                                width: 52px;
+                                horizontal-stretch: 1;
                                 clicked => { root.subtitle-cycle-requested(); }
                             }
 
                             PlayButton {
                                 label: "Completa";
-                                width: 76px;
+                                horizontal-stretch: 1;
                                 clicked => { root.fullscreen-requested(); }
                             }
 
                             PlayButton {
                                 label: "Detener";
-                                width: 68px;
+                                horizontal-stretch: 1;
                                 clicked => { root.stop-requested(); }
                             }
-                        }
-                    }
-                }
-
-                if root.settings-open : ListView {
-                    vertical-stretch: 1;
-
-                    for row[i] in root.settings-rows : SettingRowView {
-                        data: row;
-                        index: i;
-                        clicked(index) => { root.setting-clicked(index); }
-                    }
-                }
-
-                if root.detail-open : Rectangle {
-                    vertical-stretch: 1;
-                    background: Theme.surface;
-                    border-radius: 12px;
-
-                    VerticalLayout {
-                        padding: 24px;
-                        spacing: 10px;
-
-                        Rectangle {
-                            width: 110px;
-                            height: 34px;
-                            border-radius: 8px;
-                            background: Theme.surface-hi;
-
-                            Text {
-                                x: 14px;
-                                height: parent.height;
-                                text: "← Volver";
-                                color: Theme.text;
-                                font-size: 13px;
-                                vertical-alignment: center;
-                            }
-
-                            TouchArea {
-                                width: parent.width;
-                                height: parent.height;
-                                clicked => { root.back-requested(); }
-                            }
-                        }
-
-                        Text {
-                            text: root.detail-title;
-                            color: Theme.text;
-                            font-size: 22px;
-                            font-weight: 700;
-                            wrap: word-wrap;
-                        }
-
-                        Text {
-                            text: root.detail-subtitle;
-                            color: Theme.muted;
-                            font-size: 14px;
-                        }
-
-                        HorizontalLayout {
-                            spacing: 10px;
-                            alignment: start;
-
-                            PlayButton {
-                                label: "Reproducir";
-                                primary: true;
-                                width: 150px;
-                                clicked => { root.play-requested(); }
-                            }
-
-                            PlayButton {
-                                label: root.detail-favorite ? "Quitar de favoritos" : "Agregar a favoritos";
-                                width: 190px;
-                                clicked => { root.favorite-requested(); }
-                            }
-                        }
-
-                        Text {
-                            text: root.detail-text;
-                            color: Theme.text;
-                            font-size: 14px;
-                            wrap: word-wrap;
-                        }
-
-                        Rectangle {
-                            vertical-stretch: 1;
                         }
                     }
                 }

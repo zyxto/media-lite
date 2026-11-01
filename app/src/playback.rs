@@ -16,7 +16,7 @@ use media_lite_player::{Event, Filters, LoadOptions, Mode, Options, Player};
 use media_lite_providers::text::lang_name;
 use serde_json::Value;
 
-use crate::state::{set_status, with_app, App};
+use crate::state::{self, set_error, set_status, with_app, App};
 
 /// Cada cuántos segundos de reproducción se guarda la posición.
 const SAVE_EVERY_SECS: f64 = 10.0;
@@ -69,6 +69,10 @@ pub struct Playback {
     pub queue_index: usize,
     /// Terminó el video: la cuenta regresiva para el siguiente elemento corre desde aquí.
     pub countdown: Option<Instant>,
+    /// mpv ya cargó el archivo al menos una vez. Antes de eso el estado es «conectando».
+    pub started: bool,
+    /// Segundos de video ya bajados por delante de la reproducción (`demuxer-cache-duration`).
+    pub buffer_secs: Option<f64>,
 }
 
 impl Playback {
@@ -106,6 +110,8 @@ impl Playback {
             queue,
             queue_index: index,
             countdown: None,
+            started: false,
+            buffer_secs: None,
         }
     }
 }
@@ -155,6 +161,7 @@ fn request_with(app: &Rc<App>, item: Item, queue: Vec<Item>, carry: Option<Strin
         .position(|q| q.id == item.id && q.platform == item.platform)
         .unwrap_or(0);
     set_status(app, "Preparando reproducción…");
+    state::set_activity(app, crate::Activity::Preparing);
     app.pool.run(move || {
         let result = provider.details(&item);
         let _ = slint::invoke_from_event_loop(move || {
@@ -171,15 +178,17 @@ fn begin(
     index: usize,
     carry: Option<String>,
 ) {
+    // Terminó la preparación, salga como salga: el botón vuelve a estar disponible.
+    state::set_activity(app, crate::Activity::Idle);
     match result {
         Ok(details) => {
             let quality = app.settings.borrow().quality;
             match choose_source(&details.sources, quality) {
                 Some(source) => start(app, &item, &source, queue, index, carry),
-                None => set_status(app, "Este título no tiene fuentes reproducibles todavía."),
+                None => set_error(app, "Este título no tiene fuentes reproducibles todavía."),
             }
         }
-        Err(e) => set_status(app, e.to_string()),
+        Err(e) => set_error(app, e.to_string()),
     }
 }
 
@@ -224,7 +233,7 @@ fn start(
         match Player::spawn(&options) {
             Ok(player) => *app.player.borrow_mut() = Some(player),
             Err(e) => {
-                set_status(app, e.to_string());
+                set_error(app, e.to_string());
                 return;
             }
         }
@@ -256,7 +265,7 @@ fn start(
             set_status(app, format!("Reproduciendo «{}»", item.title));
             sync_ui(app);
         }
-        Err(e) => set_status(app, format!("No se pudo abrir el video: {e}")),
+        Err(e) => set_error(app, format!("No se pudo abrir el video: {e}")),
     }
 }
 
@@ -341,6 +350,7 @@ fn apply(app: &Rc<App>, event: Event) {
                     }
                 }
                 "fullscreen" => pb.fullscreen = value.as_bool().unwrap_or(false),
+                "demuxer-cache-duration" => pb.buffer_secs = value.as_f64(),
                 "track-list" => {
                     let (audio, audio_selected) = tracks(&value, "audio");
                     let (subs, sub_selected) = tracks(&value, "sub");
@@ -366,6 +376,7 @@ fn apply(app: &Rc<App>, event: Event) {
         }
         Event::FileLoaded => {
             if let Some(pb) = app.playback.borrow_mut().as_mut() {
+                pb.started = true;
                 pb.buffering = false;
                 pb.stall_since = None;
             }
@@ -374,7 +385,7 @@ fn apply(app: &Rc<App>, event: Event) {
             // Un cambio de archivo (`loadfile replace`) también avisa `stop`: no es el fin.
             "eof" => on_eof(app),
             "error" => {
-                set_status(app, "Se cortó la reproducción.");
+                set_error(app, "Se cortó la reproducción.");
                 finish(app, false);
             }
             "quit" => finish(app, false),
@@ -618,6 +629,7 @@ pub fn sync_ui(app: &Rc<App>) {
             window.set_play_paused(pb.paused);
             window.set_can_step_prev(neighbor(&pb.queue, pb.queue_index, -1).is_some());
             window.set_can_step_next(neighbor(&pb.queue, pb.queue_index, 1).is_some());
+            window.set_play_buffering(pb.buffering && pb.countdown.is_none());
             let status = match pb.countdown {
                 Some(since) => {
                     let left = NEXT_COUNTDOWN
@@ -626,13 +638,21 @@ pub fn sync_ui(app: &Rc<App>) {
                         .ceil() as u32;
                     format!("Siguiente en {left} s")
                 }
-                None if pb.buffering => "Cargando…".to_string(),
-                None if pb.paused => "En pausa".to_string(),
-                None => "Reproduciendo".to_string(),
+                // Antes del primer cuadro: mpv todavía no abrió el stream.
+                None if pb.buffering && !pb.started => "Conectando con el video…".to_string(),
+                None if pb.buffering => match pb.buffer_secs {
+                    Some(secs) => format!("Cargando buffer · {secs:.0} s"),
+                    None => "Cargando buffer…".to_string(),
+                },
+                None if pb.paused => format!("En pausa · {}p", pb.max_height),
+                None => format!("Reproduciendo · {}p", pb.max_height),
             };
             window.set_play_status(status.into());
         }
-        None => window.set_playing(false),
+        None => {
+            window.set_playing(false);
+            window.set_play_buffering(false);
+        }
     }
 }
 

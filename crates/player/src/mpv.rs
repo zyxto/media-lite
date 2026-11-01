@@ -87,7 +87,7 @@ impl From<std::io::Error> for PlayerError {
 }
 
 /// Propiedades que la app observa para actualizar la barra de controles.
-pub const OBSERVED: [&str; 8] = [
+pub const OBSERVED: [&str; 9] = [
     "time-pos",
     "duration",
     "pause",
@@ -96,6 +96,7 @@ pub const OBSERVED: [&str; 8] = [
     "core-idle",
     "paused-for-cache",
     "fullscreen",
+    "demuxer-cache-duration",
 ];
 
 pub struct Player {

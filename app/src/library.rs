@@ -90,6 +90,8 @@ pub fn show(app: &Rc<App>, shelf: Shelf) {
     let count = list.len();
     let generation = app.generation.next();
     listing::show_listing(app, generation, list, Vec::new(), String::new());
+    // Una pantalla de la biblioteca no espera nada de la red: no hay carga pendiente.
+    crate::state::set_activity(app, crate::Activity::Idle);
     let status = match shelf {
         Shelf::Home => format!(
             "{} · {count} elementos (seguir viendo y favoritos)",
@@ -99,6 +101,9 @@ pub fn show(app: &Rc<App>, shelf: Shelf) {
     };
     set_status(app, status);
     if let Some(w) = app.weak.upgrade() {
+        if count == 0 {
+            w.set_empty_message(empty_text(shelf).into());
+        }
         // Ninguna plataforma ni sección queda marcada mientras se ve la biblioteca.
         w.set_platform_index(-1);
         w.set_section_index(-1);
@@ -107,6 +112,15 @@ pub fn show(app: &Rc<App>, shelf: Shelf) {
             Shelf::History => 1,
             Shelf::Favorites => 2,
         });
+    }
+}
+
+/// Mensaje para una pantalla vacía: dice qué hacer para que aparezca algo.
+fn empty_text(shelf: Shelf) -> &'static str {
+    match shelf {
+        Shelf::Home => "Todavía no hay nada en «seguir viendo» ni en favoritos.",
+        Shelf::History => "Todavía no viste nada. Lo que mires aparece acá.",
+        Shelf::Favorites => "No tenés favoritos. Abrí un título y tocá «Agregar a favoritos».",
     }
 }
 
