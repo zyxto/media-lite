@@ -25,6 +25,16 @@ pub fn load(app: &Rc<App>) {
             nav.query.clone(),
         )
     };
+    if app.nav.borrow().global {
+        match query {
+            Some(q) => global_search(app, q),
+            None => set_status(
+                app,
+                "Escribí algo en el buscador: busca en todas las plataformas a la vez.",
+            ),
+        }
+        return;
+    }
     let Some(provider) = app.providers.get(provider_index).cloned() else {
         return;
     };
@@ -85,6 +95,85 @@ pub fn load(app: &Rc<App>) {
     });
 }
 
+/// Busca en todas las plataformas a la vez. Cada una responde por su lado y sus resultados se
+/// agregan a la grilla al llegar, con el nombre de la plataforma en el subtítulo.
+pub fn global_search(app: &Rc<App>, query: String) {
+    let generation = app.generation.next();
+    show_listing(
+        app,
+        generation,
+        Vec::new(),
+        Vec::new(),
+        format!("Buscando «{query}» en todas las plataformas…"),
+    );
+    app.grid.borrow_mut().pending = app.providers.len();
+    let providers = app.providers.clone();
+    for provider in providers {
+        let query = query.clone();
+        app.pool.run(move || {
+            let label = provider.platform().label();
+            let result = provider.search(&query, None);
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| {
+                    if app.generation.current() != generation {
+                        return;
+                    }
+                    let found: Vec<Item> = match result {
+                        Ok(page) => page
+                            .items
+                            .into_iter()
+                            .map(|mut item| {
+                                item.subtitle = if item.subtitle.is_empty() {
+                                    label.to_string()
+                                } else {
+                                    format!("{label} · {}", item.subtitle)
+                                };
+                                item
+                            })
+                            .collect(),
+                        Err(e) => {
+                            log::info!("búsqueda en {label}: {e}");
+                            Vec::new()
+                        }
+                    };
+                    let pending = {
+                        let mut grid = app.grid.borrow_mut();
+                        grid.pending = grid.pending.saturating_sub(1);
+                        grid.pending
+                    };
+                    append_items(app, generation, found);
+                    let count = app.grid.borrow().items.len();
+                    let status = if pending == 0 {
+                        format!("Búsqueda «{query}» en todas las plataformas · {count} resultados")
+                    } else {
+                        format!("Buscando «{query}»… {count} resultados hasta ahora")
+                    };
+                    set_status(app, status);
+                });
+            });
+        });
+    }
+}
+
+/// Agrega resultados al final de la grilla, si siguen siendo del mismo listado.
+fn append_items(app: &Rc<App>, generation: u64, items: Vec<Item>) {
+    if items.is_empty() {
+        return;
+    }
+    {
+        let mut grid = app.grid.borrow_mut();
+        if grid.listing != generation {
+            return;
+        }
+        let added = items.len();
+        grid.images.extend(std::iter::repeat_n(None, added));
+        grid.requested.extend(std::iter::repeat_n(false, added));
+        grid.items.extend(items);
+        grid.rebuild();
+    }
+    visible_now(app);
+}
+
 /// Hilo principal: muestra el listado nuevo y descarta las miniaturas que quedaron de antes.
 pub fn show_listing(
     app: &Rc<App>,
@@ -114,6 +203,10 @@ pub fn show_listing(
     visible_now(app);
     // Gancho de desarrollo (prueba automática): MEDIA_LITE_OPEN=settings abre Ajustes.
     if generation == 1 {
+        if let Ok(query) = std::env::var("MEDIA_LITE_SEARCH") {
+            app.nav.borrow_mut().global = true;
+            global_search(app, query);
+        }
         match std::env::var("MEDIA_LITE_OPEN").as_deref() {
             Ok("settings") => crate::settings::open(app),
             Ok("home") => crate::library::open(app, crate::library::Shelf::Home),

@@ -429,7 +429,7 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
   - [x] Ajustes: pantalla propia (calidad, salida de video, decodificación, video liviano, renderizador, Plex con inglés, caché de miniaturas, tema).
   - [ ] En vivo, películas y series **de todas las plataformas juntas**: hoy cada plataforma se elige por separado.
   - [ ] Siguiendo: canales de Twitch, Kick y YouTube (llega con esas fases).
-- [ ] **Búsqueda global**: se consulta a todas las plataformas a la vez (con un tope de 2–3 pedidos simultáneos) y los resultados se agrupan en filas por plataforma, cada una con "ver más". Hoy la búsqueda es por plataforma.
+- [x] **Búsqueda global**: la última entrada de la lista de plataformas, «Todas las plataformas», consulta a los tres proveedores a la vez, en el pool de red. Los resultados se agregan a la grilla al llegar, con el nombre de la plataforma en el subtítulo. Probado en vivo: «prueba» devolvió 99 resultados de Pluto TV y de Runtime. Falta agruparlos en filas por plataforma con «ver más».
 - [x] Historial y "Seguir viendo" con la posición de cada título (el historial guarda el elemento completo, para volver a abrirlo).
 - [ ] Ajustes unificados: falta el botón «Actualizar el soporte de YouTube» (llega con la Fase 4) y el selector de plataformas visibles.
 

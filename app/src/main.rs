@@ -92,6 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         settings: RefCell::new(settings.clone()),
         nav: RefCell::new(Nav {
             library: None,
+            global: false,
             platform: 0,
             section: 1,
             category: None,
@@ -107,11 +108,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     state::install(app.clone());
 
     window.global::<Theme>().set_dark(settings.theme_dark);
-    let platform_names: Vec<SharedString> = app
+    let mut platform_names: Vec<SharedString> = app
         .providers
         .iter()
         .map(|p| SharedString::from(p.platform().label()))
         .collect();
+    // La última entrada busca en todas las plataformas a la vez.
+    platform_names.push(SharedString::from("Todas las plataformas"));
     window.set_platforms(ModelRc::new(VecModel::from(platform_names)));
     window.set_sections(state::section_labels());
     window.set_columns(columns as i32);
@@ -161,9 +164,13 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
         window.on_platform_clicked(move |i| {
             {
                 let mut nav = app.nav.borrow_mut();
-                nav.platform = i as usize;
+                nav.global = i as usize >= app.providers.len();
+                nav.platform = (i as usize).min(app.providers.len().saturating_sub(1));
                 nav.query = None;
                 nav.library = None;
+            }
+            if let Some(w) = app.weak.upgrade() {
+                w.set_platform_index(i);
             }
             listing::close_detail(&app);
             listing::load(&app);

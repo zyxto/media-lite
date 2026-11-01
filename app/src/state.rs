@@ -46,6 +46,8 @@ pub struct Grid {
     pub series: Option<SeriesView>,
     /// Miniaturas ya pedidas, para no volver a pedirlas al desplazarse.
     pub requested: Vec<bool>,
+    /// Búsquedas de plataformas que todavía no respondieron (búsqueda global).
+    pub pending: usize,
 }
 
 impl Grid {
@@ -61,6 +63,7 @@ impl Grid {
             category: 0,
             series: None,
             requested: Vec::new(),
+            pending: 0,
         }
     }
 
@@ -115,6 +118,8 @@ impl Grid {
 /// Lo que el usuario eligió: plataforma, sección, categoría y búsqueda, si hay una.
 #[derive(Clone)]
 pub struct Nav {
+    /// Búsqueda en todas las plataformas a la vez.
+    pub global: bool,
     /// Pantalla de la biblioteca (Inicio, historial, favoritos), si está abierta.
     pub library: Option<crate::library::Shelf>,
     pub platform: usize,
