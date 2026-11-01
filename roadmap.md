@@ -12,7 +12,7 @@ systemd).
 
 ## Estado (1 de noviembre de 2026)
 
-- **Publicado:** `v0.2.0` en `main` (AppImage de 9,9 MB en GitHub Releases). `v0.1.0` tiene el primer AppImage con TV gratis.
+- **Publicado:** `v0.2.1` en `main` (AppImage en GitHub Releases; `v0.2.0` ya estaba publicada). `v0.1.0` tiene el primer AppImage con TV gratis.
 - **Hecho:** Fases 1, 2, 3 y 9 (con pendientes), 4a (solucionador), y parte de la 7 (Ajustes, biblioteca, búsqueda global, miniaturas solo de lo visible).
 - **Sin hacer:** YouTube (4b y 4c: streams y catálogo), Twitch y Kick (5), música (6), cuentas (8), y lo que quedó pendiente en cada fase.
 - **Pendiente de la laptop:** mediciones de la Fase 0, prueba de las distros de la Fase 9, y medir la RAM en release con 60 elementos.
