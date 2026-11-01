@@ -453,22 +453,15 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 
 ### Fase 9: Empaquetado AppImage (3–4 días)
 
-- [ ] `packaging/build-appimage.sh`, que corre dentro de `debian:bullseye`:
-  1. `cargo build --release`
-  2. Arma el `AppDir`: `usr/bin/media-lite`, `usr/share/media-lite/{input.conf,mpv.conf,clients.toml,ejs/}`,
-     `media-lite.desktop`, ícono 256×256, `AppRun`.
-  3. **No incluir** mpv, libX11 ni libGL: se usan los del sistema. Revisar con `ldd` que solo dependa de
-     glibc, libgcc_s, libm, libdl y de lo que winit carga con `dlopen` (libX11, libxkbcommon, libxcursor, libXi, libGL/EGL).
-  4. Empaquetar con `appimagetool` y el **runtime estático nuevo** (`AppImage/type2-runtime`), que
-     no necesita `libfuse2` en el sistema; alcanza con `fusermount` (paquete `fuse`/`fuse3`).
-- [ ] Al arrancar, revisar las dependencias: si falta `mpv`, mostrar `sudo apt install mpv`; si falta
-      FUSE, el README explica `./media-lite.AppImage --appimage-extract-and-run`.
-- [ ] Integración opcional con el menú: copiar el `.desktop` a `~/.local/share/applications`
-      (el menú de IceWM/JWM de antiX lo toma).
-- [ ] Actualizaciones opcionales: `zsync` embebido (`gh-releases-zsync|…`) para AppImageUpdate.
-- [ ] Probar en: antiX 23 (lo que tenés), Debian 11, Debian 12, MX Linux, Ubuntu 22.04 (máquinas virtuales livianas).
-- [ ] Incluir las licencias de terceros (`ejs`: Unlicense; meriyah: ISC; astring: MIT; QuickJS-NG/rquickjs: MIT) en `usr/share/doc/media-lite/`.
-- [ ] CI: cada tag publica `media-lite-x86_64.AppImage` y su `.zsync`.
+- [x] `packaging/build-appimage.sh`: corre dentro de `debian:bullseye` (glibc 2.31) con Docker. Compila con `--locked`, verifica con `objdump` que el binario pide glibc ≤ 2.31 (mide **GLIBC_2.30**), arma el `AppDir` y empaqueta con `appimagetool` y el runtime estático `type2-runtime`. **Debian 11 ya no tiene soporte**: el script apunta apt a `archive.debian.org`, solo dentro del contenedor.
+- [x] AppDir: `usr/bin/media-lite`, `.desktop`, ícono 256×256 (generado en `packaging/media-lite.png`), `AppRun`, y `usr/share/doc/media-lite/` con la GPL y la licencia OFL de Inter.
+- [x] **Resultado: `media-lite-x86_64.AppImage` de 9,3 MB.** Se ejecuta desde el archivo y abre la ventana. Sus dependencias del sistema son solo libc, libm, libgcc_s, libdl y libpthread: X11, fontconfig y GL se cargan con `dlopen`. mpv no va adentro (se pide con `sudo apt install mpv`).
+- [x] Si falta mpv, el app muestra el comando para instalarlo. El README explica `--appimage-extract-and-run` si falta FUSE.
+- [x] **Automatización**: `.github/workflows/appimage.yml` corre en cada push a `main` y publica el release `v<versión de Cargo.toml>` con el AppImage y su `.sha256`.
+- [ ] Integración con el menú (copiar el `.desktop` a `~/.local/share/applications`): pendiente.
+- [ ] Actualizaciones con zsync: pendiente.
+- [ ] Probar en antiX 23, Debian 11, Debian 12, MX y Ubuntu 22.04: **pendiente, requiere las máquinas**.
+- [ ] Licencias de terceros de los crates (con `cargo-about`): pendiente. Las de `ejs` y `rquickjs` llegan con la Fase 4.
 
 ### Fase 10: Pulido y rendimiento (continuo)
 

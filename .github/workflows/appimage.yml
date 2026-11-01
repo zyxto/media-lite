@@ -1,0 +1,41 @@
+name: AppImage
+
+# Cada push (y cada merge) a main construye el AppImage y lo publica como release
+# con la versión de Cargo.toml (por ejemplo, v0.1.0). Ver packaging/build-appimage.sh.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: appimage-main
+  cancel-in-progress: false
+
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir el AppImage (Debian 11, glibc 2.31)
+        run: packaging/build-appimage.sh
+
+      - name: Versión
+        id: version
+        run: echo "tag=v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar el release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: media-lite ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          overwrite_files: true
+          files: |
+            dist/media-lite-x86_64.AppImage
+            dist/media-lite-x86_64.AppImage.sha256

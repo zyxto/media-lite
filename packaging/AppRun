@@ -1,0 +1,5 @@
+#!/bin/sh
+# Punto de entrada del AppImage: usa los binarios empaquetados y, por lo demás, el sistema.
+HERE="$(dirname "$(readlink -f "$0")")"
+export PATH="$HERE/usr/bin:$PATH"
+exec "$HERE/usr/bin/media-lite" "$@"

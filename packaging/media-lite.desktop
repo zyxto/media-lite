@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=media-lite
+GenericName=Televisión, videos, películas y música
+Comment=TV gratis, YouTube, Twitch, Kick y música en una sola app liviana
+Exec=media-lite %U
+Icon=media-lite
+Terminal=false
+Categories=AudioVideo;Video;Network;
+Keywords=video;tv;youtube;twitch;música;
+StartupNotify=true
