@@ -266,6 +266,8 @@ export component AppWindow inherits Window {
     in property <string> play-status;
     in property <[string]> chips;
     in property <bool> settings-open;
+    in property <int> library-index: -1;
+    in property <bool> detail-favorite;
     in property <[SettingRow]> settings-rows;
     in property <int> chip-index: 0;
     in property <bool> can-step-prev;
@@ -283,6 +285,8 @@ export component AppWindow inherits Window {
     callback next-requested();
     callback chip-clicked(int);
     callback settings-requested();
+    callback library-clicked(int);
+    callback favorite-requested();
     callback visible-rows-changed(int, int);
     callback setting-clicked(int);
 
@@ -392,6 +396,32 @@ export component AppWindow inherits Window {
 
                     Rectangle {
                         vertical-stretch: 1;
+                    }
+
+                    Text {
+                        text: "BIBLIOTECA";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        height: 26px;
+                        vertical-alignment: bottom;
+                    }
+
+                    NavButton {
+                        label: "Inicio";
+                        active: root.library-index == 0;
+                        clicked => { root.library-clicked(0); }
+                    }
+
+                    NavButton {
+                        label: "Historial";
+                        active: root.library-index == 1;
+                        clicked => { root.library-clicked(1); }
+                    }
+
+                    NavButton {
+                        label: "Favoritos";
+                        active: root.library-index == 2;
+                        clicked => { root.library-clicked(2); }
                     }
 
                     NavButton {
@@ -690,11 +720,22 @@ export component AppWindow inherits Window {
                             font-size: 14px;
                         }
 
-                        PlayButton {
-                            label: "Reproducir";
-                            primary: true;
-                            width: 150px;
-                            clicked => { root.play-requested(); }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+
+                            PlayButton {
+                                label: "Reproducir";
+                                primary: true;
+                                width: 150px;
+                                clicked => { root.play-requested(); }
+                            }
+
+                            PlayButton {
+                                label: root.detail-favorite ? "Quitar de favoritos" : "Agregar a favoritos";
+                                width: 190px;
+                                clicked => { root.favorite-requested(); }
+                            }
                         }
 
                         Text {

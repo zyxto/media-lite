@@ -34,6 +34,8 @@ const QUALITY_STEPS: [u32; 5] = [1080, 720, 480, 360, 240];
 /// Estado de lo que se está reproduciendo, según lo que informa mpv.
 #[derive(Clone, Debug)]
 pub struct Playback {
+    /// El elemento completo que se reproduce.
+    pub item: Item,
     pub platform: Platform,
     pub id: String,
     pub title: String,
@@ -80,6 +82,7 @@ impl Playback {
         carry: Option<String>,
     ) -> Playback {
         Playback {
+            item: item.clone(),
             platform: item.platform,
             id: item.id.clone(),
             title: item.title.clone(),
@@ -470,6 +473,7 @@ fn maybe_save(app: &Rc<App>, force: bool) {
         position,
         duration: pb.duration,
         at: now(),
+        item: Some(pb.item),
     };
     let mut list = app.history.borrow_mut();
     history::upsert(&mut list, entry);

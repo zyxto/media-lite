@@ -99,6 +99,8 @@ impl Grid {
                 .iter()
                 .map(|s| SharedString::from(s.name.as_str()))
                 .collect(),
+            // Sin categorías (búsqueda, biblioteca): no hay chips.
+            None if self.categories.is_empty() => Vec::new(),
             None => std::iter::once(SharedString::from("Todas"))
                 .chain(
                     self.categories
@@ -113,6 +115,8 @@ impl Grid {
 /// Lo que el usuario eligió: plataforma, sección, categoría y búsqueda, si hay una.
 #[derive(Clone)]
 pub struct Nav {
+    /// Pantalla de la biblioteca (Inicio, historial, favoritos), si está abierta.
+    pub library: Option<crate::library::Shelf>,
     pub platform: usize,
     pub section: usize,
     /// Id de la categoría elegida en el chip (`None`: todas).
@@ -138,6 +142,7 @@ pub struct App {
     pub player: RefCell<Option<Player>>,
     pub playback: RefCell<Option<Playback>>,
     pub history: RefCell<Vec<history::Entry>>,
+    pub favorites: RefCell<Vec<Item>>,
     pub grid: RefCell<Grid>,
 }
 

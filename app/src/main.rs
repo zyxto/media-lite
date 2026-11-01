@@ -4,6 +4,7 @@
 //! los resultados vuelven al hilo principal con `invoke_from_event_loop`. Todo el estado de la
 //! interfaz vive en el hilo principal (ver `state`).
 
+mod library;
 mod listing;
 mod playback;
 mod settings;
@@ -73,6 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     let history = store.load_list::<history::Entry>("history.json");
+    let favorites = store.load_list::<media_lite_core::Item>("favorites.json");
 
     let window = AppWindow::new()?;
     let columns = listing::columns_for(settings.window_width as f32);
@@ -89,6 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         store,
         settings: RefCell::new(settings.clone()),
         nav: RefCell::new(Nav {
+            library: None,
             platform: 0,
             section: 1,
             category: None,
@@ -98,6 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         player: RefCell::new(None),
         playback: RefCell::new(None),
         history: RefCell::new(history),
+        favorites: RefCell::new(favorites),
         grid: RefCell::new(grid),
     });
     state::install(app.clone());
@@ -159,6 +163,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
                 let mut nav = app.nav.borrow_mut();
                 nav.platform = i as usize;
                 nav.query = None;
+                nav.library = None;
             }
             listing::close_detail(&app);
             listing::load(&app);
@@ -171,6 +176,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
                 let mut nav = app.nav.borrow_mut();
                 nav.section = i as usize;
                 nav.query = None;
+                nav.library = None;
             }
             listing::close_detail(&app);
             listing::load(&app);
@@ -181,6 +187,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
         window.on_search_submitted(move |text| {
             let query = text.trim().to_string();
             app.nav.borrow_mut().query = (!query.is_empty()).then_some(query);
+            app.nav.borrow_mut().library = None;
             listing::close_detail(&app);
             listing::load(&app);
         });
@@ -264,6 +271,19 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         let app = app.clone();
         window.on_settings_requested(move || settings::open(&app));
+    }
+    {
+        let app = app.clone();
+        window.on_library_clicked(move |i| {
+            if let Some(shelf) = library::Shelf::from_index(i as usize) {
+                settings::close(&app);
+                library::open(&app, shelf);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        window.on_favorite_requested(move || library::toggle_favorite(&app));
     }
     {
         let app = app.clone();

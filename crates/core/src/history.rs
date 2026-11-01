@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::Platform;
+use crate::model::{Item, Platform};
 
 /// Máximo de entradas. Lo más reciente va primero.
 pub const LIMIT: usize = 500;
@@ -23,6 +23,9 @@ pub struct Entry {
     pub duration: f64,
     /// Momento de la última reproducción, en segundos desde la época Unix.
     pub at: u64,
+    /// El elemento completo, para volver a abrirlo (tiene el dato del stream de cada plataforma).
+    #[serde(default)]
+    pub item: Option<Item>,
 }
 
 /// Guarda o actualiza la entrada de (plataforma, id) y la pone primera.
@@ -59,6 +62,7 @@ mod tests {
             position,
             duration,
             at: 0,
+            item: None,
         }
     }
 

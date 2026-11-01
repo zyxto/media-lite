@@ -320,7 +320,7 @@ renderizador de Slint usar y que el solucionador de YouTube anda en tiempos acep
 - [x] `cli`: `media-lite-cli platforms|list|search|details` imprime JSON.
 - [x] Un proveedor de prueba con datos fijos y miniaturas PNG reales, para desarrollar la interfaz sin red.
 
-**Medido:** la grilla con 60 miniaturas en una ventana de 1100×720, binario de release: **41,7 MB de RAM** (objetivo: < 40 MB, **no cumplido todavía**). Sin miniaturas el app usa 23,2 MB. El costo está en las copias de cada imagen dentro del renderer de Slint (~300 KB por miniatura de 256×144). Bajar a 224×126 solo ahorra 1,2 MB, así que no se hizo. La solución de fondo es cargar miniaturas solo para las filas visibles: va a la Fase 10.
+**Medido:** la grilla con 60 miniaturas en una ventana de 1100×720, binario de release: **41,7 MB de RAM** (objetivo: < 40 MB, **no cumplido todavía**). Sin miniaturas el app usa 23,2 MB. El costo está en las copias de cada imagen dentro del renderer de Slint (~300 KB por miniatura de 256×144). Bajar a 224×126 solo ahorra 1,2 MB, así que no se hizo. La solución de fondo (cargar miniaturas solo para las filas visibles) quedó hecha en la Fase 7: falta volver a medir en release.
 
 Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Femtovg aporta 0,65 MB; se mantiene para poder elegirlo en Ajustes.
 
@@ -424,20 +424,16 @@ Portar `plugins/music` y `app_music.cpp`:
 
 Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 
-- [ ] **Barra lateral única**:
-  - Inicio: "Seguir viendo", directos de los canales que seguís y algo de cada plataforma.
-  - En vivo: canales de TV (Pluto/Runtime/Plex) y directos (Twitch/Kick/YouTube), con filtro por plataforma.
-  - Películas y series: Pluto, Runtime y Plex.
-  - Videos: YouTube.
-  - Música.
-  - Siguiendo y Favoritos: canales de Twitch/Kick/YouTube, artistas y favoritos de TV en un solo lugar.
-  - Historial.
-  - Ajustes.
-- [ ] **Búsqueda global**: se consulta a todas las plataformas a la vez (con un tope de 2–3 pedidos
-      simultáneos) y los resultados se agrupan en filas por plataforma, cada una con "ver más".
-- [ ] Historial y "Seguir viendo" unificados, con la posición de cada título.
-- [ ] Ajustes unificados: calidad, `vo`, `hwdec`, video liviano, renderizador, tamaño de la caché,
-      idioma de Plex, plataformas visibles (para esconder las que no uses).
+- [~] **Barra lateral única**:
+  - [x] Biblioteca: Inicio («Seguir viendo» y favoritos), Historial y Favoritos. Se abren sin red.
+  - [x] Ajustes: pantalla propia (calidad, salida de video, decodificación, video liviano, renderizador, Plex con inglés, caché de miniaturas, tema).
+  - [ ] En vivo, películas y series **de todas las plataformas juntas**: hoy cada plataforma se elige por separado.
+  - [ ] Siguiendo: canales de Twitch, Kick y YouTube (llega con esas fases).
+- [ ] **Búsqueda global**: se consulta a todas las plataformas a la vez (con un tope de 2–3 pedidos simultáneos) y los resultados se agrupan en filas por plataforma, cada una con "ver más". Hoy la búsqueda es por plataforma.
+- [x] Historial y "Seguir viendo" con la posición de cada título (el historial guarda el elemento completo, para volver a abrirlo).
+- [ ] Ajustes unificados: falta el botón «Actualizar el soporte de YouTube» (llega con la Fase 4) y el selector de plataformas visibles.
+
+**Terminado cuando** se pueda usar sin pensar en qué plataforma es cada cosa. → Todavía no: falta la búsqueda global y el listado unificado.
 
 ### Fase 8: Cuentas (opcional, 1 semana)
 
@@ -462,14 +458,11 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 
 ### Fase 10: Pulido y rendimiento (continuo)
 
-- [ ] Perfil **"equipo lento"** de un clic: `--vo=xv`, 360p, `--framedrop=decoder+vo`, sin
-      animaciones en la interfaz, caché de miniaturas de 12 MB.
-- [ ] Medir con `heaptrack` y `/proc/<pid>/status` (VmRSS) en cada versión, con un tope en la CI
-      (por ejemplo, que el arranque con datos falsos no pase de 45 MB).
-- [ ] Mensajes de error en español y comprensibles ("Pluto TV no responde", "Este título tiene DRM").
-- [ ] Capturas y README nuevos.
-
----
+- [~] Perfil **"equipo lento"** de un clic: falta. Hoy se configura a mano en Ajustes (salida `xv`, video liviano, calidad 360p).
+- [x] Miniaturas solo de las filas visibles, con dos filas de margen, y liberación de las que quedan lejos. Pendiente medir la RAM en release con 60 elementos (objetivo < 40 MB).
+- [ ] Medir con `heaptrack` y `/proc/<pid>/status` (VmRSS) en cada versión, con un tope en la CI.
+- [ ] Mensajes de error en español y comprensibles: en gran parte ya están (los errores de los proveedores se muestran en la barra).
+- [ ] Capturas y README: README hecho; capturas nuevas pendientes.
 
 ## 4. De qué se libra cada pieza vieja
 

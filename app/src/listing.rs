@@ -11,6 +11,11 @@ use crate::state::{self, set_status, sync_chips, with_app, App, Grid, SeriesView
 
 /// Pide el listado (o la búsqueda) de la navegación actual, y sus categorías.
 pub fn load(app: &Rc<App>) {
+    let shelf = app.nav.borrow().library;
+    if let Some(shelf) = shelf {
+        crate::library::show(app, shelf);
+        return;
+    }
     let (provider_index, section, category, query) = {
         let nav = app.nav.borrow();
         (
@@ -108,8 +113,14 @@ pub fn show_listing(
     set_status(app, status);
     visible_now(app);
     // Gancho de desarrollo (prueba automática): MEDIA_LITE_OPEN=settings abre Ajustes.
-    if generation == 1 && std::env::var("MEDIA_LITE_OPEN").as_deref() == Ok("settings") {
-        crate::settings::open(app);
+    if generation == 1 {
+        match std::env::var("MEDIA_LITE_OPEN").as_deref() {
+            Ok("settings") => crate::settings::open(app),
+            Ok("home") => crate::library::open(app, crate::library::Shelf::Home),
+            Ok("history") => crate::library::open(app, crate::library::Shelf::History),
+            Ok("favorites") => crate::library::open(app, crate::library::Shelf::Favorites),
+            _ => {}
+        }
     }
     // Gancho de desarrollo (prueba automática): abre el primer elemento del primer listado.
     if generation == 1 && std::env::var_os("MEDIA_LITE_AUTOPLAY").is_some() {
@@ -170,6 +181,7 @@ pub fn show_detail(app: &App, index: usize) {
         item.description.clone()
     };
     w.set_detail_text(SharedString::from(text));
+    w.set_detail_favorite(crate::library::is_favorite(app, &item));
     w.set_detail_open(true);
 }
 
