@@ -16,6 +16,7 @@ pub fn load(app: &Rc<App>) {
         crate::library::show(app, shelf);
         return;
     }
+    state::sync_nav(app);
     let (provider_index, section, category, query) = {
         let nav = app.nav.borrow();
         (

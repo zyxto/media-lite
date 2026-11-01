@@ -172,6 +172,25 @@ pub fn set_status(app: &App, text: impl Into<SharedString>) {
     }
 }
 
+/// Marca en el menú la plataforma y la sección de la navegación actual. Así la marca sigue al
+/// clic también al volver de la biblioteca, que desmarca ambas.
+pub fn sync_nav(app: &App) {
+    let (platform, section) = {
+        let nav = app.nav.borrow();
+        // «Todas las plataformas» es la última entrada del menú (ver `main.rs`).
+        let platform = if nav.global {
+            app.providers.len()
+        } else {
+            nav.platform
+        };
+        (platform, nav.section)
+    };
+    if let Some(w) = app.weak.upgrade() {
+        w.set_platform_index(platform as i32);
+        w.set_section_index(section as i32);
+    }
+}
+
 /// Actualiza los chips de la barra con los de la grilla actual.
 pub fn sync_chips(app: &App) {
     let grid = app.grid.borrow();
