@@ -210,6 +210,26 @@ impl Provider for Twitch {
     }
 
     /// Un canal se abre como una serie: «En vivo» (si está en directo) y «Transmisiones anteriores».
+    /// Los canales seguidos que están en directo ahora (una sola consulta, hasta 100 canales).
+    fn feed(&self, channels: &[Item]) -> Result<Vec<Item>> {
+        let logins: Vec<String> = channels
+            .iter()
+            .filter(|c| c.kind == Kind::Series)
+            .take(100)
+            .map(|c| c.id.clone())
+            .collect();
+        if logins.is_empty() {
+            return Ok(Vec::new());
+        }
+        const FEED: &str = "query($l:[String!]){users(logins:$l){@USER@ @STREAM@}}";
+        let data = self.gql(&gql_query(FEED), json!({ "l": logins }))?;
+        Ok(jarr(&data, "users")
+            .iter()
+            .filter(|u| u["stream"].is_object())
+            .map(|u| live_item(u, &u["stream"]))
+            .collect())
+    }
+
     fn seasons(&self, channel: &Item) -> Result<Vec<Season>> {
         if channel.kind != Kind::Series {
             return Err(Error::unsupported());

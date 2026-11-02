@@ -6,6 +6,7 @@
 
 mod chat;
 mod detail;
+mod follow;
 mod library;
 mod listing;
 mod playback;
@@ -22,7 +23,7 @@ use media_lite_core::history;
 use media_lite_core::pool::{Generation, Pool};
 use media_lite_core::store::Store;
 use media_lite_core::thumbs::{self, ThumbCache};
-use media_lite_core::{http, paths, Section};
+use media_lite_core::{http, paths, Item, Section};
 use media_lite_player::Proxy;
 use media_lite_providers::registry;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -61,7 +62,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::set_var("SLINT_BACKEND", &settings.renderer);
     }
 
-    let providers = registry(store.dir(), settings.plex_english);
+    // Las plataformas ocultas en Ajustes no se cargan (si todas estuvieran ocultas, se muestran).
+    let providers: Vec<_> = {
+        let all = registry(store.dir(), settings.plex_english);
+        let visible: Vec<_> = all
+            .iter()
+            .filter(|p| {
+                !settings
+                    .hidden_platforms
+                    .iter()
+                    .any(|k| k == p.platform().key())
+            })
+            .cloned()
+            .collect();
+        if visible.is_empty() {
+            all
+        } else {
+            visible
+        }
+    };
+    let following: Vec<Item> = store.load_list("following.json");
     let providers_len = providers.len();
     let thumb_dir = paths::cache_dir().join("thumbs");
     let pool = Pool::new(NET_THREADS, "media-lite-net");
@@ -119,6 +139,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         favorites: RefCell::new(favorites),
         grid: RefCell::new(grid),
         chat: RefCell::new(chat::Chat::default()),
+        following: RefCell::new(following),
+        feed: RefCell::new(Vec::new()),
     });
     // Lo lento de cada plataforma (el reproductor de YouTube, por ejemplo) se prepara en segundo
     // plano, sin bloquear la ventana.

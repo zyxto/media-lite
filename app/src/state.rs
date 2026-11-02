@@ -206,6 +206,10 @@ pub struct App {
     pub history: RefCell<Vec<history::Entry>>,
     pub favorites: RefCell<Vec<Item>>,
     pub grid: RefCell<Grid>,
+    /// Canales seguidos (Twitch, Kick y YouTube), en el orden en que se siguieron.
+    pub following: RefCell<Vec<Item>>,
+    /// Lo último de los canales seguidos (en vivo y videos nuevos), por plataforma.
+    pub feed: RefCell<Vec<Item>>,
     /// Chat junto al reproductor (directos y repeticiones).
     pub chat: RefCell<crate::chat::Chat>,
 }

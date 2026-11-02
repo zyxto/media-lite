@@ -47,6 +47,12 @@ pub trait Provider: Send + Sync {
         Err(Error::unsupported())
     }
 
+    /// Lo nuevo de estos canales seguidos: los que están en vivo y, si la plataforma lo ofrece, los
+    /// últimos videos. Se llama en segundo plano desde «Siguiendo».
+    fn feed(&self, _channels: &[Item]) -> Result<Vec<Item>> {
+        Err(Error::unsupported())
+    }
+
     /// Se llama en segundo plano al arrancar la app, para dejar listo lo lento (por ejemplo, el
     /// reproductor de YouTube). No devuelve nada: los errores quedan en el registro.
     fn warm(&self) {}

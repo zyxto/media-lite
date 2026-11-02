@@ -221,6 +221,20 @@ impl Provider for Kick {
         }
     }
 
+    /// Los canales seguidos que están en directo (hasta 40 canales, uno por pedido).
+    fn feed(&self, channels: &[Item]) -> Result<Vec<Item>> {
+        let mut out = Vec::new();
+        for channel in channels.iter().filter(|c| c.kind == Kind::Series).take(40) {
+            match self.channel(&channel.id) {
+                Ok(c) if !c["livestream"].is_null() => out.push(live_item(&c["livestream"], &c)),
+                // Un bloqueo de Cloudflare corta todo; otro error solo salta ese canal.
+                Err(e) if self.blocked.load(Ordering::Relaxed) => return Err(e),
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+
     /// Un canal se abre como una serie: «En vivo» (si está en directo) y «Transmisiones anteriores».
     fn seasons(&self, channel_item: &Item) -> Result<Vec<Season>> {
         if channel_item.kind != Kind::Series {

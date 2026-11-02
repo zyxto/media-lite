@@ -14,6 +14,7 @@ pub enum Shelf {
     Home,
     History,
     Favorites,
+    Following,
 }
 
 impl Shelf {
@@ -22,6 +23,7 @@ impl Shelf {
             0 => Some(Shelf::Home),
             1 => Some(Shelf::History),
             2 => Some(Shelf::Favorites),
+            3 => Some(Shelf::Following),
             _ => None,
         }
     }
@@ -31,6 +33,7 @@ impl Shelf {
             Shelf::Home => "Inicio",
             Shelf::History => "Historial",
             Shelf::Favorites => "Favoritos",
+            Shelf::Following => "Siguiendo",
         }
     }
 }
@@ -45,6 +48,7 @@ pub fn items(app: &App, shelf: Shelf) -> Vec<Item> {
         }
         Shelf::History => app.history.borrow().iter().map(entry_item).collect(),
         Shelf::Favorites => app.favorites.borrow().clone(),
+        Shelf::Following => crate::follow::shelf_items(app),
     }
 }
 
@@ -82,6 +86,9 @@ pub fn open(app: &Rc<App>, shelf: Shelf) {
         nav.category = None;
     }
     show(app, shelf);
+    if shelf == Shelf::Following {
+        crate::follow::refresh(app);
+    }
 }
 
 /// Vuelve a dibujar la pantalla de la biblioteca (por ejemplo, después de cambiar un favorito).
@@ -111,6 +118,7 @@ pub fn show(app: &Rc<App>, shelf: Shelf) {
             Shelf::Home => 0,
             Shelf::History => 1,
             Shelf::Favorites => 2,
+            Shelf::Following => 3,
         });
     }
 }
@@ -121,6 +129,9 @@ fn empty_text(shelf: Shelf) -> &'static str {
         Shelf::Home => "Todavía no hay nada en «seguir viendo» ni en favoritos.",
         Shelf::History => "Todavía no viste nada. Lo que mires aparece acá.",
         Shelf::Favorites => "No tenés favoritos. Abrí un título y tocá «Agregar a favoritos».",
+        Shelf::Following => {
+            "No seguís canales. Abrí un canal de Twitch, Kick o YouTube y tocá «Seguir canal»."
+        }
     }
 }
 
@@ -130,6 +141,22 @@ pub fn toggle_favorite(app: &Rc<App>) {
     let Some(item) = item else {
         return;
     };
+    if crate::follow::is_channel(&item) {
+        let following = crate::follow::toggle(app, &item);
+        if let Some(w) = app.weak.upgrade() {
+            w.set_detail_favorite(following);
+            w.set_favorite_label(channel_label(following).into());
+        }
+        set_status(
+            app,
+            if following {
+                "Canal seguido: aparece en «Siguiendo»."
+            } else {
+                "Dejaste de seguir el canal."
+            },
+        );
+        return;
+    }
     let now_favorite = {
         let mut favorites = app.favorites.borrow_mut();
         match favorites
@@ -165,6 +192,38 @@ pub fn toggle_favorite(app: &Rc<App>) {
     );
 }
 
+/// Texto del botón de favoritos para un canal (seguir) o para cualquier otro título.
+fn channel_label(following: bool) -> &'static str {
+    if following {
+        "Siguiendo"
+    } else {
+        "Seguir canal"
+    }
+}
+
+/// Pone el botón de favoritos (o de seguir, en un canal) de acuerdo con el elemento abierto.
+pub fn sync_favorite_button(app: &App, item: &Item) {
+    let Some(w) = app.weak.upgrade() else {
+        return;
+    };
+    if crate::follow::is_channel(item) {
+        let following = crate::follow::is_following(app, item);
+        w.set_detail_favorite(following);
+        w.set_favorite_label(channel_label(following).into());
+    } else {
+        let favorite = is_favorite(app, item);
+        w.set_detail_favorite(favorite);
+        w.set_favorite_label(
+            if favorite {
+                "En favoritos"
+            } else {
+                "Favoritos"
+            }
+            .into(),
+        );
+    }
+}
+
 /// Si el elemento abierto está en favoritos (para el texto del botón).
 pub fn is_favorite(app: &App, item: &Item) -> bool {
     app.favorites
@@ -182,7 +241,8 @@ mod tests {
     fn shelves_map_from_sidebar_indexes() {
         assert_eq!(Shelf::from_index(0), Some(Shelf::Home));
         assert_eq!(Shelf::from_index(2), Some(Shelf::Favorites));
-        assert_eq!(Shelf::from_index(3), None);
+        assert_eq!(Shelf::from_index(3), Some(Shelf::Following));
+        assert_eq!(Shelf::from_index(4), None);
     }
 
     #[test]

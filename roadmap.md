@@ -629,16 +629,22 @@ Portar `plugins/music` y `app_music.cpp`:
 
 Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 
-- [~] **Barra lateral única**:
-  - [x] Biblioteca: Inicio («Seguir viendo» y favoritos), Historial y Favoritos. Se abren sin red.
-  - [x] Ajustes: pantalla propia (calidad, salida de video, decodificación, video liviano, renderizador, Plex con inglés, caché de miniaturas, tema).
-  - [ ] En vivo, películas y series **de todas las plataformas juntas**: hoy cada plataforma se elige por separado.
-  - [ ] Siguiendo: canales de Twitch, Kick y YouTube (llega con esas fases).
-- [x] **Búsqueda global**: la última entrada de la lista de plataformas, «Todas las plataformas», consulta a los tres proveedores a la vez, en el pool de red. Los resultados se agregan a la grilla al llegar, con el nombre de la plataforma en el subtítulo. Probado en vivo: «prueba» devolvió 99 resultados de Pluto TV y de Runtime. Falta agruparlos en filas por plataforma con «ver más».
-- [x] Historial y "Seguir viendo" con la posición de cada título (el historial guarda el elemento completo, para volver a abrirlo).
-- [ ] Ajustes unificados: falta el botón «Actualizar el soporte de YouTube» (llega con la Fase 4) y el selector de plataformas visibles.
+**Hecho el 2 de noviembre de 2026** (commit «Fase 7 - …»): secciones de todas las plataformas,
+«Siguiendo», y ajustes unificados. Falta la búsqueda agrupada por filas y pegar cookies desde la app.
 
-**Terminado cuando** se pueda usar sin pensar en qué plataforma es cada cosa. → Todavía no: falta la búsqueda global y el listado unificado.
+- [x] **Barra lateral única**:
+  - [x] Biblioteca: Inicio («Seguir viendo» y favoritos), Historial, Favoritos y **Siguiendo**. Se abren sin red.
+  - [x] Ajustes: pantalla propia (calidad, salida de video, decodificación, video liviano, renderizador, Plex con inglés, caché de miniaturas, tema, soporte de YouTube, cookies y plataformas visibles).
+  - [x] **En vivo, películas, series, videos y música de todas las plataformas juntas**: «Todas las plataformas» + la sección pide a cada plataforma que la ofrezca (sin búsqueda).
+  - [x] **Siguiendo**: canales de Twitch, Kick y YouTube. Un canal se sigue desde su pantalla («Seguir canal»). Lo nuevo se pide en segundo plano: directos de Twitch y Kick, y los últimos videos de YouTube por su feed RSS (sin cuenta). Probado en vivo con la CLI (`media-lite-cli feed`).
+- [x] **Búsqueda global**: la última entrada de la lista de plataformas, «Todas las plataformas», consulta a los proveedores a la vez, en el pool de red. Los resultados se agregan a la grilla al llegar, con el nombre de la plataforma en el subtítulo. Probado en vivo: «prueba» devolvió 99 resultados de Pluto TV y de Runtime.
+- [ ] **Búsqueda global agrupada en filas por plataforma, con «ver más»**: hoy los resultados van todos en una grilla, con el nombre de la plataforma en el subtítulo.
+- [x] Historial y "Seguir viendo" con la posición de cada título (el historial guarda el elemento completo, para volver a abrirlo).
+- [x] **Ajustes unificados**: «Soporte de YouTube» (busca la última versión del solucionador, sin reiniciar) y **«Mostrar» por plataforma** (se aplica al reiniciar).
+- [ ] **Pegar cookies de YouTube desde la app** (la fila de Ajustes muestra si hay cookies y dónde se ponen; el campo para pegarlas no está). Lo mismo para Twitch y Kick en la Fase 8.
+
+**Terminado cuando** se pueda usar sin pensar en qué plataforma es cada cosa. → Casi: falta agrupar la búsqueda
+global por plataforma y pegar las cookies desde la app.
 
 ### Fase 8: Cuentas (opcional, 1 semana)
 

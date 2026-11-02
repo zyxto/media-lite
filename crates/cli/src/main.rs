@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | categories <plataforma> <sección> | seasons <plataforma> <id> | details <plataforma> <id> | yt-resolve <id|url> [--client X] [--dump DIR] [--timing]";
+const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | categories <plataforma> <sección> | seasons <plataforma> <id> | details <plataforma> <id> | feed <plataforma> <ids> | yt-resolve <id|url> [--client X] [--dump DIR] [--timing]";
 
 fn run(args: &[String]) -> Result<String, String> {
     let providers = registry(&media_lite_core::paths::config_dir(), false);
@@ -77,6 +77,18 @@ fn run(args: &[String]) -> Result<String, String> {
             to_json(&seasons)
         }
         Some("yt-resolve") => yt_resolve(positional.get(1), &flags),
+        Some("feed") => {
+            // `feed <plataforma> <id1,id2,…>`: lo nuevo de esos canales (como «Siguiendo»).
+            let provider = provider_arg(&providers, positional.get(1))?;
+            let ids = positional.get(2).ok_or("falta la lista de canales (ids separados por coma)")?;
+            let channels: Vec<Item> = ids
+                .split(',')
+                .filter(|id| !id.is_empty())
+                .map(|id| Item::new(provider.platform(), Kind::Series, id.to_string(), id.to_string()))
+                .collect();
+            let items = provider.feed(&channels).map_err(|e| e.to_string())?;
+            to_json(&items)
+        }
         Some("details") => {
             let provider = provider_arg(&providers, positional.get(1))?;
             let id = positional.get(2).ok_or("falta el id")?;

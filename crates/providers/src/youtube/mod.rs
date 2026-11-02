@@ -10,6 +10,7 @@ pub mod external;
 pub mod innertube;
 pub mod player_js;
 pub mod resolve;
+pub mod rss;
 pub mod streams;
 
 use std::path::Path;
@@ -63,6 +64,7 @@ pub fn video_id_of(text: &str) -> Option<String> {
 pub struct YouTube {
     api: Arc<Innertube>,
     resolver: Arc<Resolver>,
+    feeds: media_lite_core::http::Agent,
 }
 
 impl YouTube {
@@ -77,7 +79,11 @@ impl YouTube {
             Arc::clone(&api),
             exe,
         ));
-        YouTube { api, resolver }
+        YouTube {
+            api,
+            resolver,
+            feeds: media_lite_core::http::agent(),
+        }
     }
 
     /// Una página de un canal temático (o la de una pestaña ya conocida, con su token).
@@ -161,6 +167,23 @@ impl Provider for YouTube {
 
     fn invalidate(&self, item: &Item) {
         self.resolver.forget(&item.id);
+    }
+
+    /// Los últimos videos de los canales seguidos, por su feed RSS (hasta 20 canales, 5 videos cada uno).
+    fn feed(&self, channels: &[Item]) -> Result<Vec<Item>> {
+        let mut out = Vec::new();
+        for channel in channels.iter().filter(|c| c.kind == Kind::Series).take(20) {
+            let url = rss::feed_url(&channel.id);
+            match media_lite_core::http::get_bytes(&self.feeds, &url, 1024 * 1024) {
+                Ok(bytes) => out.extend(
+                    rss::parse(&String::from_utf8_lossy(&bytes))
+                        .into_iter()
+                        .take(5),
+                ),
+                Err(e) => log::warn!("feed de {}: {e}", channel.title),
+            }
+        }
+        Ok(out)
     }
 
     fn warm(&self) {

@@ -580,6 +580,7 @@ export component AppWindow inherits Window {
     in property <bool> settings-open;
     in property <int> library-index: -1;
     in property <bool> detail-favorite;
+    in property <string> favorite-label: "Favoritos";
     // Pantalla de un título: la miniatura de la tarjeta (se ve mientras llega la imagen grande),
     // la imagen grande, y si el título es una serie (con su lista de episodios).
     in property <image> detail-thumb;
@@ -802,6 +803,12 @@ export component AppWindow inherits Window {
                                 label: "Favoritos";
                                 active: root.library-index == 2;
                                 clicked => { root.library-clicked(2); }
+                            }
+
+                            NavButton {
+                                label: "Siguiendo";
+                                active: root.library-index == 3;
+                                clicked => { root.library-clicked(3); }
                             }
                         }
                     }
@@ -1153,7 +1160,7 @@ export component AppWindow inherits Window {
 
                                             HeroButton {
                                                 icon: root.detail-favorite ? "✓" : "+";
-                                                label: root.detail-favorite ? "En favoritos" : "Favoritos";
+                                                label: root.favorite-label;
                                                 clicked => { root.favorite-requested(); }
                                             }
                                         }

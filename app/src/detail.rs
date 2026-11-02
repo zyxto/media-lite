@@ -170,7 +170,7 @@ fn present(
     w.set_detail_thumb(placeholder.unwrap_or_default());
     w.set_detail_image(Image::default());
     w.set_detail_image_ready(false);
-    w.set_detail_favorite(crate::library::is_favorite(app, item));
+    crate::library::sync_favorite_button(app, item);
     w.set_detail_series(series);
     w.set_detail_play_label(SharedString::from(play_label));
     w.set_detail_open(true);

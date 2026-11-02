@@ -2,9 +2,11 @@
 //! actualiza en el hilo principal.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use media_lite_core::thumbs::Thumb;
-use media_lite_core::{Category, Item, Kind, Season, Section};
+use media_lite_core::{Caps, Category, Item, Kind, Page, Season, Section};
+use media_lite_providers::Provider;
 use slint::{ComponentHandle, Image, Model, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
 use crate::detail;
@@ -32,10 +34,7 @@ pub fn load(app: &Rc<App>) {
     if app.nav.borrow().global {
         match query {
             Some(q) => global_search(app, q),
-            None => set_status(
-                app,
-                "Escribí algo en el buscador: busca en todas las plataformas a la vez.",
-            ),
+            None => global_section(app, section),
         }
         return;
     }
@@ -119,51 +118,126 @@ pub fn global_search(app: &Rc<App>, query: String) {
     for provider in providers {
         let query = query.clone();
         app.pool.run(move || {
-            let label = provider.platform().label();
+            let name = provider.platform().label();
             let result = provider.search(&query, None);
             let _ = slint::invoke_from_event_loop(move || {
                 with_app(|app| {
-                    if app.generation.current() != generation {
-                        return;
-                    }
-                    let found: Vec<Item> = match result {
-                        Ok(page) => page
-                            .items
-                            .into_iter()
-                            .map(|mut item| {
-                                item.subtitle = if item.subtitle.is_empty() {
-                                    label.to_string()
-                                } else {
-                                    format!("{label} · {}", item.subtitle)
-                                };
-                                item
-                            })
-                            .collect(),
-                        Err(e) => {
-                            log::info!("búsqueda en {label}: {e}");
-                            Vec::new()
+                    part_arrived(app, generation, name, result, move |count, done| {
+                        if done {
+                            format!(
+                                "Búsqueda «{query}» en todas las plataformas · {count} resultados"
+                            )
+                        } else {
+                            format!("Buscando «{query}»… {count} resultados hasta ahora")
                         }
-                    };
-                    let pending = {
-                        let mut grid = app.grid.borrow_mut();
-                        grid.pending = grid.pending.saturating_sub(1);
-                        grid.pending
-                    };
-                    append_items(app, generation, found);
-                    if pending == 0 {
-                        state::set_activity(app, crate::Activity::Idle);
-                    }
-                    let count = app.grid.borrow().items.len();
-                    let status = if pending == 0 {
-                        format!("Búsqueda «{query}» en todas las plataformas · {count} resultados")
-                    } else {
-                        format!("Buscando «{query}»… {count} resultados hasta ahora")
-                    };
-                    set_status(app, status);
+                    })
                 });
             });
         });
     }
+}
+
+/// «Todas las plataformas» sin búsqueda: la sección (en vivo, películas, series…) de cada
+/// plataforma que la tiene, en una sola grilla.
+pub fn global_section(app: &Rc<App>, section: Section) {
+    let label = section.label();
+    let providers: Vec<Arc<dyn Provider>> = app
+        .providers
+        .iter()
+        .filter(|p| offers(&p.caps(), section))
+        .cloned()
+        .collect();
+    let generation = app.generation.next();
+    if providers.is_empty() {
+        show_listing(
+            app,
+            generation,
+            Vec::new(),
+            Vec::new(),
+            format!("Ninguna plataforma tiene «{label}»."),
+        );
+        return;
+    }
+    show_listing(
+        app,
+        generation,
+        Vec::new(),
+        Vec::new(),
+        format!("Cargando {label} de todas las plataformas…"),
+    );
+    app.grid.borrow_mut().pending = providers.len();
+    state::set_activity(app, crate::Activity::Catalog);
+    for provider in providers {
+        app.pool.run(move || {
+            let name = provider.platform().label();
+            let result = provider.list(section, None, None);
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| {
+                    part_arrived(app, generation, name, result, move |count, done| {
+                        if done {
+                            format!("{label} de todas las plataformas · {count} elementos")
+                        } else {
+                            format!("Cargando {label}… {count} elementos hasta ahora")
+                        }
+                    })
+                });
+            });
+        });
+    }
+}
+
+/// ¿La plataforma ofrece esta sección?
+fn offers(caps: &Caps, section: Section) -> bool {
+    match section {
+        Section::Live => caps.live,
+        Section::Movies => caps.movies,
+        Section::Series => caps.series,
+        Section::Videos => caps.videos,
+        Section::Music => caps.music,
+    }
+}
+
+/// Llegó la parte de una plataforma a un listado de todas: se agrega a la grilla (con el nombre de la
+/// plataforma en el subtítulo) y se actualiza el estado. `status(cantidad, terminó)` dice qué mostrar.
+fn part_arrived(
+    app: &Rc<App>,
+    generation: u64,
+    name: &str,
+    result: media_lite_core::Result<Page>,
+    status: impl Fn(usize, bool) -> String,
+) {
+    if app.generation.current() != generation {
+        return;
+    }
+    let found: Vec<Item> = match result {
+        Ok(page) => page
+            .items
+            .into_iter()
+            .map(|mut item| {
+                item.subtitle = if item.subtitle.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{name} · {}", item.subtitle)
+                };
+                item
+            })
+            .collect(),
+        Err(e) => {
+            log::info!("{name}: {e}");
+            Vec::new()
+        }
+    };
+    let pending = {
+        let mut grid = app.grid.borrow_mut();
+        grid.pending = grid.pending.saturating_sub(1);
+        grid.pending
+    };
+    append_items(app, generation, found);
+    if pending == 0 {
+        state::set_activity(app, crate::Activity::Idle);
+    }
+    let count = app.grid.borrow().items.len();
+    set_status(app, status(count, pending == 0));
 }
 
 /// Agrega resultados al final de la grilla, si siguen siendo del mismo listado.

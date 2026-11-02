@@ -34,6 +34,9 @@ pub struct Settings {
     pub thumb_mem_mb: u32,
     /// Tope de la caché de miniaturas en disco, en MB.
     pub thumb_disk_mb: u32,
+    /// Plataformas que no se muestran (su clave: `pluto`, `twitch`…). Se aplica al reiniciar la app.
+    #[serde(default)]
+    pub hidden_platforms: Vec<String>,
 }
 
 impl Default for Settings {
@@ -53,6 +56,7 @@ impl Default for Settings {
             plex_english: false,
             thumb_mem_mb: 24,
             thumb_disk_mb: 64,
+            hidden_platforms: Vec::new(),
         }
     }
 }

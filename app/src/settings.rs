@@ -4,6 +4,8 @@
 use std::rc::Rc;
 
 use media_lite_core::store::Settings;
+use media_lite_core::{paths, Platform};
+use media_lite_providers::youtube::cookies;
 use slint::{ModelRc, SharedString, VecModel};
 
 use crate::state::{set_status, App};
@@ -15,6 +17,21 @@ const VIDEO_OUTPUTS: [&str; 2] = ["xv", "gpu"];
 const DECODERS: [&str; 2] = ["no", "auto-safe"];
 const RENDERERS: [&str; 2] = ["winit-software", "winit-femtovg"];
 const CACHE_MB: [u32; 3] = [12, 24, 48];
+
+/// Fila del soporte de YouTube (busca una versión nueva del solucionador).
+const ROW_YOUTUBE: usize = 8;
+/// Fila de las cookies de YouTube (solo informa dónde se ponen).
+const ROW_COOKIES: usize = 9;
+/// Primera fila de plataformas: una por cada una que se muestra, en el orden de `Platform::ALL`.
+const ROW_PLATFORMS: usize = 10;
+
+/// Las plataformas que tienen su fila (todas menos la de prueba).
+fn switchable() -> Vec<Platform> {
+    Platform::ALL
+        .into_iter()
+        .filter(|p| *p != Platform::Demo)
+        .collect()
+}
 
 /// Filas de la pantalla, según los ajustes actuales.
 pub fn rows(settings: &Settings) -> Vec<SettingRow> {
@@ -65,7 +82,39 @@ pub fn rows(settings: &Settings) -> Vec<SettingRow> {
             },
             "También se cambia desde la barra lateral",
         ),
+        row(
+            "Soporte de YouTube",
+            &youtube_support_version(),
+            "Toca para buscar la última versión del solucionador",
+        ),
+        row(
+            "Cookies de YouTube",
+            if cookies::path(&paths::config_dir()).exists() {
+                "Cargadas"
+            } else {
+                "No hay"
+            },
+            "Archivo cookies/youtube.txt en ~/.config/media-lite (permisos 0600)",
+        ),
     ]
+    .into_iter()
+    .chain(switchable().into_iter().map(|p| {
+        let hidden = settings.hidden_platforms.iter().any(|k| k == p.key());
+        row(
+            &format!("Mostrar {}", p.label()),
+            &on_off(!hidden),
+            "Al reiniciar la app",
+        )
+    }))
+    .collect()
+}
+
+/// Versión del soporte de YouTube que se usa: la instalada, o la que trae la app.
+fn youtube_support_version() -> String {
+    match media_lite_ytsolver::update::load_installed(&paths::data_dir().join("ejs")) {
+        Some((version, _)) if !version.is_empty() => version,
+        _ => format!("{} (incluido)", media_lite_ytsolver::EJS_VERSION),
+    }
 }
 
 fn row(label: &str, value: &str, note: &str) -> SettingRow {
@@ -95,6 +144,19 @@ pub fn close(app: &Rc<App>) {
 
 /// Un clic en la fila `index`: pasa al siguiente valor y lo guarda.
 pub fn click(app: &Rc<App>, index: usize) {
+    if index == ROW_YOUTUBE {
+        return update_youtube(app);
+    }
+    if index == ROW_COOKIES {
+        set_status(
+            app,
+            "Pegá tus cookies de YouTube en ~/.config/media-lite/cookies/youtube.txt (formato Netscape o «Cookie:»).",
+        );
+        return;
+    }
+    if index >= ROW_PLATFORMS {
+        return toggle_platform(app, index - ROW_PLATFORMS);
+    }
     let restart = {
         let mut s = app.settings.borrow_mut();
         match index {
@@ -153,6 +215,61 @@ fn next<T: PartialEq + Copy>(options: &[T], current: T) -> T {
     options[i]
 }
 
+/// Busca la última versión del soporte de YouTube (el solucionador) y la instala. Corre en el pool:
+/// la app sigue usable. El cambio vale para las próximas resoluciones.
+fn update_youtube(app: &Rc<App>) {
+    set_status(app, "Buscando la última versión del soporte de YouTube…");
+    let dir = paths::data_dir().join("ejs");
+    app.pool.run(move || {
+        let agent = media_lite_core::http::agent();
+        let result = media_lite_ytsolver::update::fetch_latest(&agent).and_then(|update| {
+            let version = update.version.clone();
+            media_lite_ytsolver::update::install(&dir, &update)
+                .map(|_| version)
+                .map_err(|e| media_lite_core::Error::network(e.to_string()))
+        });
+        let _ = slint::invoke_from_event_loop(move || {
+            crate::state::with_app(|app| {
+                let message = match result {
+                    Ok(version) => format!("Soporte de YouTube actualizado a {version}."),
+                    Err(e) => format!("No se pudo actualizar el soporte de YouTube: {e}"),
+                };
+                set_status(app, message);
+                if let Some(w) = app.weak.upgrade() {
+                    w.set_settings_rows(ModelRc::new(VecModel::from(rows(&app.settings.borrow()))));
+                }
+            });
+        });
+    });
+}
+
+/// Muestra u oculta una plataforma (se aplica al reiniciar la app).
+fn toggle_platform(app: &Rc<App>, i: usize) {
+    let Some(platform) = switchable().get(i).copied() else {
+        return;
+    };
+    {
+        let mut s = app.settings.borrow_mut();
+        let key = platform.key().to_string();
+        match s.hidden_platforms.iter().position(|k| *k == key) {
+            Some(pos) => {
+                s.hidden_platforms.remove(pos);
+            }
+            None => s.hidden_platforms.push(key),
+        }
+    }
+    if let Err(e) = app.store.save_settings(&app.settings.borrow()) {
+        log::warn!("no se pudieron guardar los ajustes: {e}");
+    }
+    if let Some(w) = app.weak.upgrade() {
+        w.set_settings_rows(ModelRc::new(VecModel::from(rows(&app.settings.borrow()))));
+    }
+    set_status(
+        app,
+        format!("{} cambia al reiniciar la app.", platform.label()),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,7 +286,8 @@ mod tests {
     fn rows_show_current_values() {
         let s = Settings::default();
         let r = rows(&s);
-        assert_eq!(r.len(), 8);
+        // Ocho filas fijas, luego las de plataformas (todas menos la de prueba).
+        assert_eq!(r.len(), ROW_PLATFORMS + 6);
         assert_eq!(r[0].value.as_str(), "480p");
         assert_eq!(r[1].value.as_str(), "xv");
         assert_eq!(r[3].value.as_str(), "No");
