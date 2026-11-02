@@ -78,6 +78,7 @@ install -m 644 packaging/media-lite.png "$APPDIR/media-lite.png"
 install -m 644 packaging/media-lite.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/media-lite.png"
 install -m 644 LICENSE "$APPDIR/usr/share/doc/media-lite/LICENSE"
 install -m 644 app/assets/fonts/OFL.txt "$APPDIR/usr/share/doc/media-lite/Inter-OFL.txt"
+install -m 644 packaging/THIRD-PARTY-LICENSES.md "$APPDIR/usr/share/doc/media-lite/THIRD-PARTY-LICENSES.md"
 
 # Herramientas de AppImage. Sin FUSE dentro del contenedor, se usa --appimage-extract-and-run.
 TOOLS=/tmp/appimage-tools

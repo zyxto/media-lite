@@ -9,6 +9,7 @@ mod detail;
 mod follow;
 mod library;
 mod listing;
+mod menu;
 mod music;
 mod playback;
 mod settings;

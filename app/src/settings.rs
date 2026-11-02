@@ -18,12 +18,25 @@ const DECODERS: [&str; 2] = ["no", "auto-safe"];
 const RENDERERS: [&str; 2] = ["winit-software", "winit-femtovg"];
 const CACHE_MB: [u32; 3] = [12, 24, 48];
 
+/// Fila del perfil de equipo lento (un clic baja calidad, video y caché de miniaturas).
+const ROW_SLOW: usize = 8;
 /// Fila del soporte de YouTube (busca una versión nueva del solucionador).
-const ROW_YOUTUBE: usize = 8;
+const ROW_YOUTUBE: usize = 9;
 /// Fila de las cookies de YouTube (solo informa dónde se ponen).
-const ROW_COOKIES: usize = 9;
+const ROW_COOKIES: usize = 10;
 /// Primera fila de plataformas: una por cada una que se muestra, en el orden de `Platform::ALL`.
-const ROW_PLATFORMS: usize = 10;
+const ROW_PLATFORMS: usize = 11;
+
+/// Fila de la entrada en el menú (va después de las de plataformas).
+fn row_menu() -> usize {
+    ROW_PLATFORMS + switchable().len()
+}
+
+/// Valores del perfil de equipo lento: 360p, video liviano y caché de miniaturas chica.
+const SLOW_QUALITY: u32 = 360;
+const SLOW_THUMB_MB: u32 = 12;
+const NORMAL_QUALITY: u32 = 480;
+const NORMAL_THUMB_MB: u32 = 24;
 
 /// Las plataformas que tienen su fila (todas menos la de prueba).
 fn switchable() -> Vec<Platform> {
@@ -81,6 +94,20 @@ pub fn rows(settings: &Settings) -> Vec<SettingRow> {
                 "Claro"
             },
             "También se cambia desde la barra lateral",
+        ),
+        row(
+            "Entrada en el menú",
+            if crate::menu::installed() {
+                "Sí"
+            } else {
+                "No"
+            },
+            "Copia el acceso directo a ~/.local/share/applications",
+        ),
+        row(
+            "Perfil equipo lento",
+            &on_off(settings.quality == SLOW_QUALITY && settings.low_video),
+            "360p, video liviano y poca caché de miniaturas",
         ),
         row(
             "Soporte de YouTube",
@@ -144,6 +171,12 @@ pub fn close(app: &Rc<App>) {
 
 /// Un clic en la fila `index`: pasa al siguiente valor y lo guarda.
 pub fn click(app: &Rc<App>, index: usize) {
+    if index == ROW_SLOW {
+        return toggle_slow_profile(app);
+    }
+    if index == row_menu() {
+        return toggle_menu(app);
+    }
     if index == ROW_YOUTUBE {
         return update_youtube(app);
     }
@@ -270,6 +303,47 @@ fn toggle_platform(app: &Rc<App>, i: usize) {
     );
 }
 
+/// Prende o apaga el perfil de equipo lento. Se aplica al próximo video (la calidad) y a la próxima
+/// vez que se abra la app (la caché de miniaturas).
+fn toggle_slow_profile(app: &Rc<App>) {
+    {
+        let mut s = app.settings.borrow_mut();
+        let slow = !(s.quality == SLOW_QUALITY && s.low_video);
+        if slow {
+            s.quality = SLOW_QUALITY;
+            s.low_video = true;
+            s.thumb_mem_mb = SLOW_THUMB_MB;
+        } else {
+            s.quality = NORMAL_QUALITY;
+            s.low_video = false;
+            s.thumb_mem_mb = NORMAL_THUMB_MB;
+        }
+    }
+    if let Err(e) = app.store.save_settings(&app.settings.borrow()) {
+        log::warn!("no se pudieron guardar los ajustes: {e}");
+    }
+    if let Some(w) = app.weak.upgrade() {
+        w.set_settings_rows(ModelRc::new(VecModel::from(rows(&app.settings.borrow()))));
+    }
+    set_status(app, "Perfil de equipo lento: se aplica al próximo video (la caché de miniaturas, al reiniciar).");
+}
+
+/// Agrega o quita la entrada en el menú de la distro.
+fn toggle_menu(app: &Rc<App>) {
+    let message = match crate::menu::toggle() {
+        Ok(true) => "Agregado al menú de aplicaciones.",
+        Ok(false) => "Quitado del menú de aplicaciones.",
+        Err(e) => {
+            log::warn!("no se pudo cambiar el menú: {e}");
+            "No se pudo cambiar el menú de aplicaciones."
+        }
+    };
+    if let Some(w) = app.weak.upgrade() {
+        w.set_settings_rows(ModelRc::new(VecModel::from(rows(&app.settings.borrow()))));
+    }
+    set_status(app, message);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,8 +360,8 @@ mod tests {
     fn rows_show_current_values() {
         let s = Settings::default();
         let r = rows(&s);
-        // Ocho filas fijas, luego las de plataformas (todas menos la de prueba).
-        assert_eq!(r.len(), ROW_PLATFORMS + switchable().len());
+        // Las filas fijas, luego las de plataformas (todas menos la de prueba) y la del menú.
+        assert_eq!(r.len(), row_menu() + 1);
         assert_eq!(r[0].value.as_str(), "480p");
         assert_eq!(r[1].value.as_str(), "xv");
         assert_eq!(r[3].value.as_str(), "No");
