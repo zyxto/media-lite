@@ -24,6 +24,8 @@ const SAVE_EVERY_SECS: f64 = 10.0;
 const CACHE_MB: u32 = 24;
 /// Si la imagen se queda esperando datos más de esto, se vuelve a cargar.
 const STALL_LIMIT: f64 = 20.0;
+/// Antes de que mpv confirme el archivo se espera más: abrir el stream puede tardar y bajar la calidad no lo acelera.
+const LOAD_LIMIT: f64 = 45.0;
 /// Entre dos recargas tiene que pasar al menos este tiempo.
 const RELOAD_COOLDOWN: f64 = 30.0;
 /// Segundos de cuenta regresiva antes del siguiente elemento de la cola.
@@ -43,6 +45,10 @@ pub struct Playback {
     pub duration: f64,
     pub paused: bool,
     pub buffering: bool,
+    /// `core-idle` de mpv. Ojo: también vale `true` en pausa, así que por sí solo no significa «esperando datos».
+    pub core_idle: bool,
+    /// `paused-for-cache` de mpv: se quedó sin datos y espera la red.
+    pub cache_wait: bool,
     pub fullscreen: bool,
     pub audio: Vec<(i64, String)>,
     pub audio_selected: Option<i64>,
@@ -67,6 +73,9 @@ pub struct Playback {
     /// Última vez que la posición avanzó (o se reanudó). Si no avanza sin pausa, la imagen está trabada,
     /// aunque mpv no informe que espera datos.
     pub last_progress: Instant,
+    /// Posición en la que se marcó `last_progress`. El progreso se mide contra ella y no contra el
+    /// evento anterior: mpv avisa `time-pos` en cada cuadro (~0,04 s), que sola no pasa ningún umbral.
+    pub progress_pos: f64,
     /// Lista de la que se abrió el video.
     pub queue: Vec<Item>,
     pub queue_index: usize,
@@ -99,6 +108,8 @@ impl Playback {
             duration: item.duration_secs.unwrap_or(0) as f64,
             paused: false,
             buffering: true,
+            core_idle: false,
+            cache_wait: false,
             fullscreen: false,
             audio: Vec::new(),
             audio_selected: None,
@@ -113,6 +124,7 @@ impl Playback {
             stall_since: None,
             last_reload: None,
             last_progress: Instant::now(),
+            progress_pos: position,
             queue,
             queue_index: index,
             countdown: None,
@@ -344,11 +356,15 @@ fn apply(app: &Rc<App>, event: Event) {
             let Some(pb) = guard.as_mut() else {
                 return;
             };
+            if matches!(name.as_str(), "core-idle" | "paused-for-cache" | "pause") {
+                log::debug!("mpv {name} = {value} (started={})", pb.started);
+            }
             match name.as_str() {
                 "time-pos" => {
                     if let Some(pos) = value.as_f64() {
-                        if (pos - pb.position).abs() > 0.05 {
+                        if moved(pb.progress_pos, pos) {
                             pb.last_progress = Instant::now();
+                            pb.progress_pos = pos;
                         }
                         pb.position = pos;
                     }
@@ -359,15 +375,15 @@ fn apply(app: &Rc<App>, event: Event) {
                     if !pb.paused {
                         pb.last_progress = Instant::now();
                     }
+                    refresh_waiting(pb);
                 }
-                "core-idle" | "paused-for-cache" => {
-                    let waiting = value.as_bool().unwrap_or(false);
-                    pb.buffering = waiting;
-                    match (waiting, pb.stall_since) {
-                        (true, None) => pb.stall_since = Some(Instant::now()),
-                        (false, _) => pb.stall_since = None,
-                        _ => {}
-                    }
+                "core-idle" => {
+                    pb.core_idle = value.as_bool().unwrap_or(false);
+                    refresh_waiting(pb);
+                }
+                "paused-for-cache" => {
+                    pb.cache_wait = value.as_bool().unwrap_or(false);
+                    refresh_waiting(pb);
                 }
                 "fullscreen" => pb.fullscreen = value.as_bool().unwrap_or(false),
                 "demuxer-cache-duration" => pb.buffer_secs = value.as_f64(),
@@ -395,10 +411,12 @@ fn apply(app: &Rc<App>, event: Event) {
             }
         }
         Event::FileLoaded => {
+            log::debug!("mpv file-loaded");
             let confirmed = app.playback.borrow_mut().as_mut().map(|pb| {
                 pb.started = true;
-                pb.buffering = false;
-                pb.stall_since = None;
+                // Desde aquí cuenta la reproducción: lo que tardó en abrir no es una traba.
+                pb.last_progress = Instant::now();
+                refresh_waiting(pb);
                 (pb.title.clone(), pb.pending_seek.take())
             });
             if let Some((title, seek)) = confirmed {
@@ -418,6 +436,31 @@ fn apply(app: &Rc<App>, event: Event) {
             "quit" => finish(app, false),
             _ => {}
         },
+    }
+}
+
+/// Diferencia mínima, en segundos, para considerar que la reproducción avanzó (o saltó).
+const MOVED_EPSILON: f64 = 0.25;
+
+/// ¿Se movió la posición lo suficiente respecto de `reference` como para contar como progreso?
+pub fn moved(reference: f64, pos: f64) -> bool {
+    (pos - reference).abs() > MOVED_EPSILON
+}
+
+/// ¿Está mpv esperando datos de verdad? `core-idle` solo cuenta si no hay pausa (en pausa siempre vale `true`).
+pub fn is_waiting(core_idle: bool, cache_wait: bool, paused: bool) -> bool {
+    cache_wait || (core_idle && !paused)
+}
+
+/// Recalcula `buffering` y el reloj de espera a partir de lo que informó mpv.
+fn refresh_waiting(pb: &mut Playback) {
+    let waiting = is_waiting(pb.core_idle, pb.cache_wait, pb.paused);
+    // Antes de confirmar el archivo la barra sigue en «conectando».
+    pb.buffering = waiting || !pb.started;
+    match (waiting, pb.stall_since) {
+        (true, None) => pb.stall_since = Some(Instant::now()),
+        (false, _) => pb.stall_since = None,
+        _ => {}
     }
 }
 
@@ -449,10 +492,11 @@ fn check_stall(app: &Rc<App>) {
             return;
         };
         // Espera datos (mpv lo informa) o la posición no avanza sin estar en pausa (mpv quedó en cero).
+        let limit = if pb.started { STALL_LIMIT } else { LOAD_LIMIT };
         let waiting = pb
             .stall_since
-            .is_some_and(|t| t.elapsed().as_secs_f64() >= STALL_LIMIT);
-        let frozen = !pb.paused && pb.last_progress.elapsed().as_secs_f64() >= STALL_LIMIT;
+            .is_some_and(|t| t.elapsed().as_secs_f64() >= limit);
+        let frozen = !pb.paused && pb.last_progress.elapsed().as_secs_f64() >= limit;
         let cooled = pb
             .last_reload
             .is_none_or(|t| t.elapsed().as_secs_f64() >= RELOAD_COOLDOWN);
@@ -462,15 +506,32 @@ fn check_stall(app: &Rc<App>) {
         (pb.source.clone(), pb.position, pb.max_height, pb.started)
     };
     let (source, position, max_height, started) = trabado;
+    {
+        let guard = app.playback.borrow();
+        if let Some(pb) = guard.as_ref() {
+            log::debug!(
+                "traba: started={} stall_since={:?} last_progress={:.1}s core_idle={} cache_wait={} paused={} pos={:.1}",
+                pb.started,
+                pb.stall_since.map(|t| t.elapsed().as_secs_f32()),
+                pb.last_progress.elapsed().as_secs_f32(),
+                pb.core_idle,
+                pb.cache_wait,
+                pb.paused,
+                pb.position
+            );
+        }
+    }
     let quality = lower_quality(max_height);
-    if quality == max_height {
-        // Ya está en el mínimo: volver a cargar no cambia nada. Se avisa para que pruebe otra cosa.
+    if !started || quality == max_height {
+        // Sin abrir todavía, o ya en el mínimo: volver a cargar a menor calidad no cambia nada.
+        // Se avisa para que pruebe otra cosa.
         let text = if started {
             format!("La imagen no avanza ni a {quality}p. Probá otra salida de video en Ajustes.")
         } else {
-            "mpv no abrió el video. Revisá el registro (MEDIA_LITE_LOG=debug).".to_string()
+            "El video tarda demasiado en abrir. Revisá la conexión o el registro (MEDIA_LITE_LOG=debug)."
+                .to_string()
         };
-        log::info!("la imagen no avanza ni a {quality}p");
+        log::info!("sin avance (started={started}, {max_height}p)");
         set_error(app, text);
         if let Some(pb) = app.playback.borrow_mut().as_mut() {
             pb.stall_since = None;
@@ -858,6 +919,32 @@ mod tests {
         assert_eq!(lower_quality(720), 480);
         assert_eq!(lower_quality(240), 240);
         assert_eq!(lower_quality(1000), 720);
+    }
+
+    #[test]
+    fn frame_sized_steps_add_up_to_progress() {
+        // 24 fps: un evento cada ~0,042 s. Cada paso solo no alcanza, pero la suma sí.
+        let mut reference = 10.0;
+        let mut marks = 0;
+        for n in 1..=240 {
+            let pos = 10.0 + n as f64 / 24.0;
+            if moved(reference, pos) {
+                reference = pos;
+                marks += 1;
+            }
+        }
+        assert!(marks >= 30, "marcó {marks} veces en 10 s de video");
+        // Posición quieta: nunca cuenta.
+        assert!(!moved(5.0, 5.0));
+    }
+
+    #[test]
+    fn pause_is_not_waiting_for_data() {
+        // mpv pone core-idle en true al pausar: no es una traba.
+        assert!(!is_waiting(true, false, true));
+        assert!(is_waiting(true, false, false));
+        assert!(is_waiting(true, true, true));
+        assert!(!is_waiting(false, false, false));
     }
 
     #[test]
