@@ -10,12 +10,20 @@ systemd).
 
 ---
 
-## Estado (1 de noviembre de 2026)
+## Estado (2 de noviembre de 2026)
 
-- **Publicado:** `v0.3.0` en `main` (AppImage en GitHub Releases; `v0.2.1` ya estaba publicada). `v0.1.0` tiene el primer AppImage con TV gratis.
+- **Publicado:** `v0.4.0` (pantalla de título, arreglos del reproductor). `v0.1.0` tiene el primer AppImage con TV gratis.
 - **Hecho:** Fases 1, 2, 3 y 9 (con pendientes), 4a (solucionador), y parte de la 7 (Ajustes, biblioteca, búsqueda global, miniaturas solo de lo visible).
 - **Sin hacer:** YouTube (4b y 4c: streams y catálogo), Twitch y Kick (5), música (6), cuentas (8), y lo que quedó pendiente en cada fase.
 - **Pendiente de la laptop:** mediciones de la Fase 0, prueba de las distros de la Fase 9, y medir la RAM en release con 60 elementos.
+
+**Qué frenaba YouTube y cuál es el camino (decidido el 2 de noviembre de 2026):**
+
+- El «confirmá que no sos un bot» depende de la **IP**, no del cliente. Lo dicen los mantenedores de yt-dlp y de Invidious, y sale con VPN o con IP de datacenter. La prueba anterior se hizo desde un entorno bloqueado. La red de la laptop hoy es residencial (Telmex, AR) y no hay evidencia de que esté bloqueada.
+- El bloqueo que quedaba no era de YouTube: **el clasificador de permisos de Claude Code (modo auto)** rechaza que el agente haga pedidos de prueba a `youtubei/v1/player` y los marca como «Bot Check Circumvention». Ver «Pruebas contra YouTube» en la Fase 4.
+- **Probado en la laptop el 2 de noviembre de 2026** (antiX, yt-dlp 2026.10.21, sin VPN): **no hubo aviso de bot**. `visionos` entregó todo sin JS: HLS `avc1` de 144p a 1080p con audio aparte (233/234), y DASH directo `avc1` 134/135/136 + `mp4a` 139/140. `tv_samsung` respondió, pero yt-dlp no tenía motor JS para sus `sig`/`n`. Además **trajo un anuncio previo de 6 s**: YouTube no sirve el video hasta que pasa ese tiempo.
+- **Camino elegido:** **`visionos` primero** (sin JS, sin espera). Si falla, `tv_samsung` con el solucionador que ya está hecho, respetando la espera del anuncio. Más `visitorData` y caché del reproductor para abrir rápido. Ningún cliente necesita PO token. Si YouTube igual pide confirmar, se usan las cookies del usuario (adelantar la Fase 8). No se esquiva el control: nada de rotar IPs, ni proxies, ni generar PO tokens. Detalle en 2.4.
+- **Twitch y Kick no dependen de YouTube.** No tienen ese bloqueo y se pueden hacer ya. Conviene hacer la Fase 5 **antes** que la 4b.
 
 Ver `docs/hardware.md` para lo medido y `README.md` para instalar.
 
@@ -150,17 +158,37 @@ que Lumière ya tenía en parte "por compatibilidad".
   El desafío `sig` es la firma de las URLs cifradas. Desde la versión 2025.11.12, **yt-dlp pide un
   motor externo** (Deno, Node, QuickJS o QuickJS-NG) más los scripts del proyecto
   [`yt-dlp/ejs`](https://github.com/yt-dlp/ejs). Sin motor, el soporte de YouTube figura como obsoleto y faltan formatos.
-- **Los clientes "sin JS" se están cerrando.** Sanson usa el cliente VisionOS, que hoy todavía
-  entrega un HLS completo (H.264 hasta 1080p) sin PO token ni JS. Pero `android_vr`, que estaba en la
-  misma situación, pasó a pedir PO token a mediados de 2026. VisionOS tampoco funciona con videos
-  "para niños" y a veces pide iniciar sesión. **No se puede depender de un solo cliente.**
+- **Clientes de reproducción (estado de yt-dlp `master` al 26 de octubre de 2026).** Sus clientes
+  por defecto son `tv_samsung`, `visionos` y `web`. Sin motor JS usa solo `visionos`.
+
+  | Cliente | ¿JS? | ¿PO token? | Estado | En media-lite |
+  |---|---|---|---|---|
+  | `visionos` | No | No | Anda (probado en la laptop). No sirve para videos «para niños» | **1.º** |
+  | `tv_samsung` | Sí: `sig` + `n` + `signatureTimestamp` | No | Por defecto en yt-dlp desde el 10/10/2026 (#17805), anda sin cookies. **Puede traer un anuncio previo y hay que esperar lo que dura** | **2.º** |
+  | `web_embedded` | Sí | No | Solo videos que se pueden insertar | 3.º |
+  | `web_safari` | Sí | No para HLS | **Desde 2026.07 solo da HLS con sesión iniciada o «confiable»** | Solo con cookies |
+  | `tv` (Cobalt 7.x) | Sí | No | Todo viene con DRM si no se pasan cookies | Solo con cookies |
+  | `android_vr` | No | — | **403 en todos los formatos desde el 17/08/2026** (#17461) | Descartado |
+  | `web` | Sí | Sí | Solo SABR | Descartado |
+  | `ios`, `android`, `mweb` | — | Sí | Piden token | Descartados |
+
+  Los **directos en HLS** no piden token en ningún cliente salvo `ios`.
+- **«Confirmá que no sos un bot» (`playabilityStatus.status = LOGIN_REQUIRED`).** Según los
+  mantenedores de yt-dlp y de Invidious, significa que YouTube **no confía en la IP** (VPN,
+  datacenter o IP marcada). Ningún cliente lo saltea. Lo que sí ayuda es lo mismo que hace un
+  usuario normal:
+  1. Mandar `visitorData` en el contexto. Sanson lo pide a `youtubei/v1/visitor_id` antes del
+     primer `/player` y lo guarda 3 días. Su código dice que sin eso aparece el aviso.
+  2. No usar VPN. La URL igual queda atada a la IP que la pidió.
+  3. Si sigue apareciendo, usar **las cookies de la cuenta del usuario** (como `--cookies` de yt-dlp
+     y como hace RustyPipe cuando detecta la IP bloqueada). Por eso las cookies de la Fase 8 se
+     adelantan a la Fase 4b.
+
+  **media-lite no esquiva este control.** No rota IPs, no usa proxies ni Tor, no genera PO tokens
+  y no imita huellas TLS. Si el aviso persiste, explica la causa y ofrece cargar cookies.
 - **PO tokens:** son tokens antibots que se generan con BotGuard, algo que en la práctica necesita un
-  navegador. Generarlos en este equipo es inviable. **media-lite usa solo clientes que no piden PO
-  token** (lo explica la guía de PO tokens de yt-dlp):
-  - `web_safari`: sus formatos **HLS** no piden token por ahora, pero sí resolver los desafíos JS.
-  - `web_embedded`: solo funciona con videos que se pueden insertar en otras páginas.
-  - `tv`: necesita cookies de sesión o de invitado.
-  - Los **directos en HLS** no piden token en ningún cliente salvo `ios`.
+  navegador. Generarlos en este equipo es inviable, así que **media-lite usa solo clientes que no
+  piden PO token** (ver la tabla).
 - **SABR** es el protocolo propio de YouTube que entrega el video en pedazos según el ancho de banda.
   mpv/ffmpeg **no lo reproducen**, así que se descartan los clientes que solo entregan SABR (`web`
   sin token).
@@ -170,14 +198,65 @@ que Lumière ya tenía en parte "por compatibilidad".
 
 **Diseño en media-lite:**
 
+**Cómo lo resolvieron otros y qué tomamos de cada uno:**
+
+| Proyecto | Cómo consigue los streams | Qué tomamos |
+|---|---|---|
+| **yt-dlp** | Pide `tv_samsung` + `visionos` + `web` y junta los formatos. Resuelve `n`/`sig` con ejs (Deno o QuickJS) y cachea el reproductor | Los clientes y sus constantes, ejs, la caché por `player_id`, el `player_id` sacado de `/iframe_api` |
+| **Sanson** (nuestra referencia) | `visionos` con `visitorData`. Abre en 1–2 s | Pedir `visitorData` antes del `/player`. `visionos` como primer cliente, porque no necesita JS ni hace esperar |
+| **RustyPipe** (Rust) | Si la IP está bloqueada, pasa solo a usar las cookies del usuario. El PO token lo genera un binario aparte | Usar cookies cuando aparece `LOGIN_REQUIRED` por bot |
+| **Invidious / NewPipe** | PO token con BotGuard (Deno + youtube.js, o WebView) | Nada: para 2 GB de RAM es demasiado |
+| **mpv + yt-dlp** (ytfzf y similares) | Delegan todo en yt-dlp | Solo como último recurso |
+
 ```
-           ┌──────────────── clients.toml (reemplazable) ────────────────┐
- videoId → │ 1. visionos     HLS sin JS ni token          (rápido)       │ → URLs H.264/AAC → mpv
-           │ 2. web_safari   HLS, desafío n con JS        (normal)       │
-           │ 3. web_embedded / tv con JS                  (normal)       │
-           │ 4. yt-dlp -J si está instalado, con su motor (lento, último)│
-           └─────────────────────────────────────────────────────────────┘
+ videoId (+visitorData) ─► visionos (sin JS, sin espera) ──── formatos avc1 ──────────────────────► mpv
+                               │ falla o no responde en 2 s
+                               ▼
+                           tv_samsung (sts; sig y n con ejs) ─► esperar el anuncio previo si lo hay ─► mpv
+                               │ falla
+                               ▼
+                           web_embedded (+ n/sig) ──► con cookies: tv_samsung / web_embedded / web_safari autenticados
+                                                  ──► yt-dlp -J externo si está y es ≥ 2025.11.12
 ```
+
+Todo lo que cambia seguido (versiones, user agents, orden) va en `clients.toml`.
+
+**Apertura rápida (meta: < 3 s con la caché caliente).** El tiempo de un video se reparte entre
+`/player` (estimado: 300–600 ms, sin medir), el solucionador (~0,5 s con el preprocesado en caché; 7 s la primera vez) y
+el arranque de mpv. Por eso:
+
+1. **Todo lo lento se hace antes del clic.** Al iniciar la app, en el pool de red y sin bloquear:
+   pedir `visitorData` si venció (3 días, en `~/.config/media-lite/youtube.json`), leer el
+   `player_id` de `https://www.youtube.com/iframe_api` (regex `player\\?/([0-9a-fA-F]{8})\\?/`, una
+   vez por sesión), y si es nuevo, bajar `base.js`, preprocesarlo con el solucionador y guardar su
+   `signatureTimestamp` (regex `(?:signatureTimestamp|sts)\s*:\s*([0-9]{5})`) en
+   `yt-player/<id>.sts`. Así ningún video paga los 7 s del primer análisis.
+2. **Pre-resolver.** Al abrir el detalle de un video, y durante la cuenta regresiva del siguiente,
+   se resuelven las URLs. Quedan en memoria por `videoId` durante 5 h, y si mpv recibe un 403 se
+   tiran. Cuando el usuario aprieta «Ver», ya están.
+3. **`visionos` primero, `tv_samsung` de respaldo.** `visionos` no usa el solucionador ni hace
+   esperar, así que es el camino rápido. `tv_samsung` sale si `visionos` falla, o en paralelo si
+   `visionos` no respondió en 2 s. Se recuerda qué cliente anduvo durante la sesión.
+4. **La espera del anuncio de `tv_samsung` se respeta, no se saltea.** Si la respuesta trae
+   `adPlacements` (tipo `AD_PLACEMENT_KIND_START`) o `adSlots` (`SLOT_TRIGGER_EVENT_BEFORE_CONTENT`)
+   con `instreamVideoAdRenderer`, YouTube no sirve el video hasta que pasa la duración del anuncio
+   (`playerVars` → `length_seconds`, o `skipOffsetMilliseconds` si se puede saltar). yt-dlp lo
+   maneja igual, con `available_at`. media-lite espera ese tiempo y muestra «YouTube hace esperar
+   N s». Pre-resolver al abrir el detalle (punto 2) suele cubrir esa espera.
+5. **Una sola llamada al solucionador por video**, con todos los `n` y `sig` juntos. La caché
+   `n → resultado` ya existe (`Cache::solved`).
+6. **Formatos de `visionos` (vistos en la laptop):** no trae el progresivo itag 18. Trae dos
+   opciones:
+   - **DASH directo:** video `avc1` 160/133/134/135/136/137 (144p–1080p) más audio `mp4a` 139/140.
+     A 480p pesa **530 kb/s**, contra 863 kb/s del HLS. Va a mpv como URL de video +
+     `Source.audio_url`.
+   - **HLS** (`hlsManifestUrl`): variantes `avc1` 229–232/270 y audio aparte (233/234) en
+     `EXT-X-MEDIA`. Pasa por el proxy, que ya filtra altura y códec y conserva el `EXT-X-MEDIA`.
+
+   **Preferir DASH** (menos datos y sin proxy), salvo que la prueba de velocidad muestre que lo
+   frenan. En ese caso, HLS. Los directos son siempre HLS.
+7. **Una conexión que se reusa:** un solo `ureq::Agent` para `www.youtube.com`, y mpv sigue abierto
+   entre videos (`loadfile`, ya hecho).
 
 1. **Motor embebido: QuickJS-NG mediante `rquickjs`** (licencia MIT; suma ~1–1,5 MB al binario). Es
    el mismo motor que ya traía Sanson, pero acá **solo ejecuta el solucionador**: no tiene
@@ -211,14 +290,13 @@ que Lumière ya tenía en parte "por compatibilidad".
    `--remote-components ejs:github` de yt-dlp), verifica el hash y la guarda en
    `~/.local/share/media-lite/ejs/`. Como el JS corre en una caja sin red ni disco, ejecutar código
    bajado no expone el sistema.
-6. **Se sigue probando primero el cliente sin JS** (VisionOS, igual que hoy en Sanson) porque es
-   el más rápido. Los demás clientes son el respaldo, en el orden que diga `clients.toml`.
-7. **Formatos**: se prefiere el HLS de `web_safari`/`visionos` con variantes **H.264**, porque mpv
-   lo abre directo y el CPU lo aguanta. Los formatos DASH separados (video `avc1` + audio `mp4a`) se
-   pasan a mpv con `--audio-file`.
+6. **`visionos` primero y `tv_samsung` de respaldo** (ver «Apertura rápida»). Después vienen
+   `web_embedded` y los clientes con cookies, en el orden que diga `clients.toml`.
+7. **Formatos**: solo **H.264 + AAC**. Se descartan VP9, AV1, los que traen `drmFamilies` y los
+   que son solo SABR. El orden de preferencia está en «Apertura rápida», punto 5.
 8. **yt-dlp queda como último recurso** solo si el usuario ya lo tiene instalado **con** un motor
-   JS. La versión de yt-dlp en los repositorios de Debian/antiX suele quedar vieja, así que nunca es
-   el camino principal.
+   JS. La versión de yt-dlp en los repositorios de Debian/antiX suele quedar vieja (la de esta
+   máquina es 2024.04.09), así que nunca es el camino principal.
 9. **YouTube Music** usa la misma cascada en modo solo audio. El respaldo en SoundCloud que ya tenía Sanson se mantiene.
 
 ### 2.5 Concurrencia y red (pensado para 2 núcleos)
@@ -312,7 +390,8 @@ Antes de escribir la app, medir en la laptop.
       scripts de `yt-dlp/ejs` y resuelve desafíos `n` de un `base.js` real (ver `docs/hardware.md`):
       (a) QuickJS-NG 0.16.2 (≥ 0.12), (b) primera vez: 7,4 s y 210 MB en el entorno de desarrollo,
       (c) con preprocesado: 0,45 s y 76 MB. Pendiente: medir en la T4500.
-- [ ] (pendiente, red residencial) Comprobar que los clientes `visionos` y `web_safari` entregan HLS con variantes H.264 para videos comunes y directos. Desde el entorno de desarrollo YouTube bloquea todos los clientes, así que no es concluyente.
+- [x] **Hecho el 2 de noviembre de 2026, en la laptop:** sin aviso de bot. `visionos` entrega HLS y DASH `avc1`/`mp4a` sin JS; `tv_samsung` responde con un anuncio previo de 6 s (ver Estado). Reproductor `4efb8b2c`. Falta: velocidad de descarga de los DASH de `visionos` (para descartar que los frenen sin `n`) y reproducirlo en mpv.
+- Así se repite la prueba (**la corre el usuario**, con un yt-dlp ≥ 2026.10; el de apt en la laptop ya es 2026.10.21): `yt-dlp -v -F --extractor-args "youtube:player_client=visionos,tv_samsung" dQw4w9WgXcQ`. Si sale «confirm you're not a bot», probar sin VPN; si persiste, la red está marcada y hacen falta cookies. Cuando exista, usar también `media-lite-cli yt-resolve` (Fase 4b).
 - [x] Anotar los resultados en `docs/hardware.md`. Lo medido en la laptop se completa después; mientras tanto rigen los valores conservadores de ese archivo.
 
 **Terminado cuando** sepamos qué combinación de `vo`/`hwdec`/calidad se ve fluida, qué
@@ -378,24 +457,117 @@ Portar `plugins/youtube/script.js` y `comun.js`, y sumar el solucionador de desa
 
 **4a. Solucionador (`crates/ytsolver`), 1 semana** — hecho en lo que se puede verificar sin YouTube
 
-- [ ] Obtener la URL y el `player_id` de `base.js` (de la página del video): pendiente, va con el proveedor de YouTube (4b/4c).
+- [ ] Obtener la URL y el `player_id` de `base.js`: **pasa a 4b** («Reproductor JS»). Se saca de `/iframe_api`, no de la página del video, que es más pesada.
 - [x] Subcomando `media-lite --yt-solver`: lee el JSON de ejs por stdin y responde por stdout, en un proceso aparte. QuickJS-NG (`rquickjs` 0.14) con límite de memoria de 256 MB; el padre mata el proceso a los 60 s.
 - [x] Caché por `player_id` del `preprocessed_player` y de los `n` y `sig` ya resueltos. Los ids se validan (8 hex) para no escribir fuera de la carpeta. La poda de 14 días está escrita (`Cache::prune`); falta llamarla al arrancar.
-- [ ] Preprocesar en segundo plano al encontrar un `base.js` nuevo: pendiente, depende de saber la versión del reproductor (4c).
+- [ ] Preprocesar en segundo plano al encontrar un `base.js` nuevo: **pasa a 4b** («Reproductor JS»), al arrancar la app.
 - [x] Actualizar los scripts desde GitHub con verificación: `update::fetch_latest` baja el último release y compara cada archivo con el digest sha256 que publica la API (verificado en vivo). La copia instalada en `~/.local/share/media-lite/ejs/` se usa solo si su manifiesto y sus hashes coinciden. **Falta el botón en Ajustes** (Fase 7).
 - [x] Pruebas con un `base.js` real: `solves_n_challenges_like_node` (prueba ignorada, con `MEDIA_LITE_TEST_BASEJS`) da los mismos resultados que Node. Prueba de punta a punta del proceso aparte: pendiente de correrla con el binario.
 
+**Pruebas contra YouTube (leer antes de empezar).** En modo auto, el clasificador de permisos de
+Claude Code **rechaza** que el agente haga pedidos de prueba a `youtubei/v1/player` y los marca como
+«Bot Check Circumvention». Pasó dos veces, la última el 2 de noviembre de 2026. Quien implemente esto
+**no debe buscarle la vuelta** (otros comandos, tests que en realidad hacen el pedido, etc.):
+
+- Escribir el código y las pruebas **sin red**, con respuestas de `/player` guardadas como fixtures
+  en `crates/providers/tests/fixtures/youtube/`. Las fixtures las genera el usuario con
+  `media-lite-cli yt-resolve --dump`.
+- Pedirle al usuario que corra los comandos contra YouTube (`! media-lite-cli yt-resolve <id>` en
+  el prompt), o que agregue él mismo una regla de permiso para `media-lite-cli yt-resolve` en
+  `.claude/settings.json`.
+- El catálogo (`browse`, `search`, `next`) no es parte de este bloqueo, pero conviene probarlo igual
+  con fixtures.
+
 **4b. Cascada de clientes**
 
-- [ ] Leer de `clients.toml` el orden de los clientes y sus datos: `visionos` → `web_safari` (HLS + `n`) →
-      `web_embedded`/`tv` (+ `n`/`sig`) → `yt-dlp` externo si está.
-- [ ] Descartar los formatos SABR, los que tienen DRM y los que piden PO token. **Elegir H.264 + AAC**
-      hasta la calidad configurada (480p por defecto, 360p si la ventana es chica), igual que Sanson.
-- [ ] Recordar qué cliente funcionó la última vez y empezar por ese durante la sesión.
-- [ ] Si mpv recibe 403 o la URL vence (~6 h, o cambió la IP), resolverla de nuevo y retomar en la misma posición.
-- [ ] Mensajes claros: "YouTube cambió y hay que actualizar el soporte (Ajustes)", "Este video pide iniciar sesión".
+Antes que nada: agregar `Platform::YouTube` (clave `youtube`, nombre «YouTube») en
+`crates/core/src/model.rs` y registrarlo en `providers::registry`.
+
+Archivos nuevos: `crates/providers/src/youtube/{mod.rs, innertube.rs, player_js.rs, streams.rs}` y
+`crates/providers/clients.toml` (incluido con `include_str!` y reemplazable desde
+`~/.config/media-lite/clients.toml`). `providers` pasa a depender de `media-lite-ytsolver`, y el
+ejecutable del solucionador es `std::env::current_exe()` con `--yt-solver` (ya existe en
+`app/src/main.rs`).
+
+- [ ] **`clients.toml`**: una tabla por cliente con `name`, `number` (`X-YouTube-Client-Name`),
+      `version`, `user_agent`, `device_make`, `device_model`, `os_name`, `os_version`, `needs_js` y
+      `embed_url` (solo `web_embedded`: `https://www.reddit.com/`). Más `order = ["visionos",
+      "tv_samsung", "web_embedded"]` y `hedge_ms = 2000` (a los cuántos ms sin respuesta de `visionos`
+      sale también `tv_samsung`). Valores iniciales, copiados de yt-dlp `_base.py`:
+      - `visionos`: VISIONOS, 101, `1.02`, Apple / RealityDevice17,1, visionOS 26.5.23O471, UA
+        `Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15`, `needs_js = false`.
+      - `tv_samsung`: TVHTML5, 7, `5.20260707`, Samsung / UKS9800, Tizen 2.4.0, UA
+        `Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1`, `needs_js = true`.
+      - `web_embedded`: WEB_EMBEDDED_PLAYER, 56, `2.20260708.00.00`, UA de Safari
+        `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)`, `needs_js = true`.
+- [ ] **`visitorData`** (`innertube.rs`): `POST /youtubei/v1/visitor_id` con el contexto WEB, y si no
+      viene, `browse` con `FEwhat_to_watch`. Se guarda en `youtube.json` con la fecha y vence a los
+      3 días. Va en `context.client.visitorData` de cada `/player`, y también en el encabezado
+      `X-Goog-Visitor-Id`. También se actualiza con `responseContext.visitorData` de cada respuesta.
+- [ ] **Reproductor JS** (`player_js.rs`): `player_id` desde `/iframe_api`, URL
+      `https://www.youtube.com/s/player/<id>/player_ias.vflset/en_US/base.js`, `sts` por regex
+      (ver 2.4), y preprocesado en segundo plano con `ytsolver::solve` (el `player_js` solo se pasa
+      si no hay caché). Llamar a `Cache::prune(MAX_AGE)` al arrancar.
+- [ ] **`/player`**: `POST https://www.youtube.com/youtubei/v1/player?prettyPrint=false` con
+      `{context:{client:{…, hl, gl, visitorData}}, videoId, contentCheckOk:true, racyCheckOk:true,
+      playbackContext:{contentPlaybackContext:{html5Preference:"HTML5_PREF_WANTS",
+      signatureTimestamp:<sts>}}}`. Encabezados: `User-Agent`, `X-YouTube-Client-Name`,
+      `X-YouTube-Client-Version`, `Origin: https://www.youtube.com` y `Content-Type`.
+      **Validar que `videoDetails.videoId` sea el pedido** (YouTube a veces responde otro video, ver
+      NewPipe #8713).
+- [ ] **Clasificar `playabilityStatus`**: `OK` sigue. `LOGIN_REQUIRED` con «bot» en el `reason`
+      es `YtError::BotCheck`: se cortan los demás clientes sin cookies y se va a cookies.
+      `LOGIN_REQUIRED` por edad y `UNPLAYABLE` pasan al siguiente cliente. `ERROR` es «video no
+      disponible».
+- [ ] **Descifrar** (`streams.rs`): si el formato trae `signatureCipher`, se parsea como query
+      (`s`, `sp`, que por defecto es `signature`, y `url`). Se resuelve `s` como desafío `sig` y se
+      agrega `&<sp>=<resultado>`. En toda URL con parámetro `n`, se resuelve como desafío `n` y se
+      reemplaza. Todos los desafíos de un video van **en una sola** llamada a `ytsolver::solve`.
+      Si el solucionador no puede, la falla es `YtError::Solver` y el mensaje dice «YouTube cambió;
+      actualizá el soporte en Ajustes».
+- [ ] **Elegir formatos**: descartar los que traen `drmFamilies`, los que no tienen `url` ni
+      `signatureCipher` (SABR) y los que no son `avc1`/`mp4a`. Prioridad: DASH `avc1` ≤ calidad +
+      itag 140 (`Source.audio_url`); si no hay, `hlsManifestUrl`; itag 18 solo si viene (de
+      `tv_samsung`). Los directos van por `hlsManifestUrl`. Generar un `Source` por altura
+      (240/360/480/720) para que el «bajar calidad por traba» que ya existe tenga a dónde ir.
+- [ ] **Respaldo y caché** (`mod.rs`): `visionos` primero. Si falla, o si no respondió en
+      `hedge_ms`, sale `tv_samsung` en otro hilo (`std::thread::scope`, sin tokio). Se usa el
+      primero válido. `StreamCache` en memoria: `videoId → (Vec<Source>, available_at, Instant)`,
+      vence a las 5 h. Se recuerda qué cliente anduvo.
+- [ ] **Espera del anuncio previo** (solo `tv_samsung`): calcular `available_at` como yt-dlp
+      (`_get_available_at_timestamp` en `_video.py`, ver «Apertura rápida» punto 4). Si al apretar
+      «Ver» todavía no llegó la hora, `playback.rs` muestra «YouTube hace esperar N s» con una
+      cuenta regresiva y recién después hace `loadfile`. No se saltea.
+- [ ] **403 o URL vencida** (~6 h, o cambió la IP): `playback.rs` saca el elemento de la caché,
+      vuelve a llamar a `details()` y retoma con `start=` en la misma posición. Un solo reintento.
+- [ ] **Cookies mínimas (adelantado de la Fase 8)**: en Ajustes, «Pegar cookies de YouTube»
+      (formato Netscape o encabezado `Cookie:`), guardadas en `cookies/youtube.txt` con permisos
+      0600 y nunca en los logs. Con cookies, el `/player` lleva `Cookie`, `X-Goog-AuthUser: 0`,
+      `X-Origin` y `Authorization: SAPISIDHASH <ts>_<sha1(ts + " " + SAPISID + " " + origin)>` (crate
+      `sha1`), y la cascada pasa a `tv_samsung` → `web_embedded` → `web_safari` (HLS).
+- [ ] **yt-dlp externo**: solo si `yt-dlp --version` da ≥ 2025.11.12. Se corre
+      `yt-dlp -J --no-playlist -f "bv[vcodec^=avc1][height<=H]+ba[acodec^=mp4a]/18" <url>` y se
+      toman `requested_formats[].url`. Si encuentra cookies, se las pasa con `--cookies`.
+- [ ] **Mensajes** (en español, en la barra): «YouTube pide confirmar que no sos un bot. Pasa con
+      VPN o redes marcadas: desactivá la VPN o cargá tus cookies en Ajustes», «YouTube cambió:
+      actualizá el soporte en Ajustes», «Este video pide iniciar sesión (edad)», «Video no
+      disponible en tu país».
+- [ ] **CLI**: `media-lite-cli yt-resolve <id|url> [--client X] [--dump DIR] [--timing]` imprime
+      el cliente ganador, los `Source` elegidos y el tiempo de cada paso (`visitorData`, `/player`,
+      solucionador). Con `--dump` guarda las respuestas crudas como fixtures, **sin cookies ni
+      `visitorData`**.
+- [ ] **Pruebas sin red**: descifrado (`signatureCipher` → URL), elección de formatos, clasificación
+      de `playabilityStatus` y parseo de `clients.toml`, todo con fixtures.
+
+**Terminado cuando** `media-lite-cli yt-resolve dQw4w9WgXcQ --timing`, corrido por el usuario,
+muestre `Source` H.264 en < 3 s con la caché caliente, y el video se vea en mpv desde la app.
 
 **4c. Catálogo e interfaz**
+
+Se porta de `Sanson-FLinux/plugins/youtube/script.js`: la función `api()`, las constantes
+`TAB_VIDEOS`/`TAB_LIVE`/`TAB_SHORTS`/`ONLY_CHANNELS`, la portada con los canales temáticos `TOPICS`,
+y `videoIdOf()`/`navigation/resolve_url`. Hay que actualizar su `clientVersion` WEB a
+`2.20260708.00.00`. Se puede hacer en paralelo con 4b, porque estos pedidos no tocan `/player`.
 
 - [ ] Cliente innertube WEB (portada por temas, búsqueda de videos y canales, canal con pestañas
       Videos/En vivo/Shorts, relacionados, `visitorData` guardado 3 días). Estos pedidos no piden ni JS ni token.
@@ -407,11 +579,33 @@ Portar `plugins/youtube/script.js` y `comun.js`, y sumar el solucionador de desa
 
 ### Fase 5: Twitch y Kick (1–2 semanas)
 
-Portar `plugins/twitch`, `plugins/kick`, `ws.c` y la parte de chat de `app_watch.cpp`:
+**No depende de YouTube ni del solucionador, y no tiene el problema del «no sos un bot».** Se puede
+hacer antes que la 4b. Hay que portar `Sanson-FLinux/plugins/twitch/script.js` (494 líneas),
+`plugins/kick/script.js` (430), `ws.c` y la parte de chat de `app_watch.cpp`. Agregar
+`Platform::Twitch` y `Platform::Kick`, con archivos `crates/providers/src/{twitch.rs, kick.rs}`.
 
-- [ ] Twitch: GQL (portada, búsqueda, canal, VODs), token de acceso + `usher.ttvnw.net`, salto de anuncios
-      en el proxy ("Saltando el anuncio de Twitch…" mientras dura).
-- [ ] Kick: API (portada, búsqueda, canal, directos y VODs).
+- [ ] **Twitch, catálogo**: `POST https://gql.twitch.tv/gql` con `Client-Id:
+      kimne78kx3ncx6brgo4mv6wki5h1ko` (el del cliente web, el mismo que usan Sanson y streamlink),
+      `Origin`/`Referer` `https://www.twitch.tv`. Las consultas se copian de Sanson (`STREAM`,
+      `USER`, `VIDEO`): portada, búsqueda, canal y VODs, con páginas de 30.
+- [ ] **Twitch, stream**: `streamPlaybackAccessToken(channelName, params:{platform:"web",
+      playerBackend:"mediaplayer", playerType:"site"})` → `{value, signature}`, y después
+      `https://usher.ttvnw.net/api/channel/hls/<login>.m3u8?sig=…&token=…&allow_source=true&supported_codecs=h264&p=<rand>`.
+      `supported_codecs=h264` evita las variantes HEVC/AV1, que el T4500 no decodifica. Los demás
+      parámetros están en `usher()` de Sanson.
+      Los VODs usan `videoPlaybackAccessToken` y `usher.ttvnw.net/vod/<id>.m3u8`. Ver `usher()` en
+      Sanson.
+- [ ] **Anuncios de Twitch en el proxy** (como streamlink): un segmento es anuncio si cae dentro de
+      un `#EXT-X-DATERANGE` con `CLASS="twitch-stitched-ad"` o un `ID` que empieza con
+      `stitched-ad-`. Esos segmentos se quitan de la playlist y la barra muestra «Saltando el
+      anuncio de Twitch…» mientras dura. También se quitan los `#EXT-X-TWITCH-PREFETCH`. Es un
+      filtro nuevo en `crates/player/src/playlist.rs`, junto a los patrones de Pluto.
+- [ ] **Kick**: portada `https://web.kick.com/api/v1/livestreams?page=N&limit=30&sort=featured_home`,
+      canal `https://kick.com/api/v2/channels/<slug>` (con `playback_url`, el HLS del directo), VODs
+      `…/api/v2/channels/<slug>/videos` y `https://kick.com/api/v1/video/<uuid>`. Kick está detrás de
+      Cloudflare: si responde con un desafío (403 con HTML), **no se esquiva** (nada de imitar
+      huellas TLS). Se muestra «Kick bloqueó el acceso desde esta red» y Kick queda deshabilitado
+      en la sesión.
 - [ ] Chat en vivo de Twitch (IRC sobre WebSocket) y de Kick (su WebSocket), con emotes
       (caché de imágenes compartida y límite de ~300 mensajes en memoria).
 - [ ] Repetición del chat sincronizada con `time-pos` en VODs de Twitch y Kick.
@@ -446,7 +640,7 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 
 ### Fase 8: Cuentas (opcional, 1 semana)
 
-- [ ] Iniciar sesión **pegando cookies** (formato Netscape o encabezado `Cookie:`), como ya permite Sanson.
+- [ ] Iniciar sesión **pegando cookies** (formato Netscape o encabezado `Cookie:`), como ya permite Sanson. **Para YouTube pasa a la 4b**; acá queda para Twitch y Kick.
 - [ ] Importar cookies de Firefox/Chromium/Pale Moon instalados en la distro (leer `cookies.sqlite`
       con `rusqlite` con la opción `bundled`, solo si se usa esta función).
 - [ ] Con sesión: recomendaciones de la cuenta, canales que seguís en la plataforma, escribir en el
@@ -515,6 +709,9 @@ Es lo que hace que se sienta **una sola aplicación** y no dos pegadas.
 | Riesgo | Mitigación |
 |---|---|
 | YouTube cambia el reproductor (`base.js`) y el solucionador deja de andar | Scripts `ejs` actualizables desde Ajustes sin recompilar; usar los mismos que yt-dlp, que se arreglan en horas o días |
+| YouTube pide «confirmá que no sos un bot» (IP sin confianza) | `visitorData` siempre; avisar de la VPN; cookies del usuario (4b). No esquivarlo |
+| El agente no puede probar contra YouTube (clasificador de Claude Code) | Fixtures + comandos que corre el usuario (ver «Pruebas contra YouTube», Fase 4) |
+| Kick responde con el desafío de Cloudflare | Avisar y deshabilitar Kick en la sesión; no imitar huellas TLS |
 | Se cierran los clientes sin PO token (como pasó con `android_vr`) | Cascada en `clients.toml` reemplazable; probar todas las noches en la CI con `media-lite-cli`; respaldo con `yt-dlp` externo. **Generar PO tokens queda fuera de alcance** (necesita un navegador) |
 | YouTube obliga a usar SABR en todos los clientes | mpv no lo reproduce. Último recurso: un mini-proxy SABR → HLS local siguiendo la librería [`googlevideo`](https://ytjs.dev/googlevideo/). Es mucho trabajo; hacerlo solo si llega a ser necesario |
 | Preprocesar `base.js` es demasiado lento en este CPU | Caché por versión, preprocesado en segundo plano, y la Fase 0 mide antes de comprometerse |
@@ -539,6 +736,10 @@ Semana 12     Fase 7 (unificación)                              → v0.5
 Semana 13     Fase 8 (cuentas, opcional) + Fase 9 completa     → v1.0
 ```
 
+**Orden desde la v0.4 (2 de noviembre de 2026):** Fase 5 (Twitch y Kick, no tiene bloqueos) →
+4c (catálogo de YouTube, sin `/player`) → 4b (streams, con las pruebas que corre el usuario) →
+Fase 6 → resto de la 7 → 8.
+
 Consejo: **armar el AppImage desde la v0.1** (aunque sea a mano) y usarlo a diario en la laptop.
 Los problemas de RAM y CPU aparecen ahí, no en la máquina de desarrollo.
 
@@ -555,4 +756,12 @@ Los problemas de RAM y CPU aparecen ahí, no en la máquina de desarrollo.
 - [rquickjs](https://github.com/DelSkayn/rquickjs): bindings de QuickJS-NG para Rust (MIT)
 - [googlevideo (SABR)](https://ytjs.dev/googlevideo/): referencia por si alguna vez hace falta implementar SABR
 - [yt-dlp/ejs 0.8.0](https://github.com/yt-dlp/ejs/releases/tag/0.8.0): scripts `yt.solver.{lib,core}.min.js` usados en el prototipo de la Fase 0
-- [yt-dlp: constantes de clientes (`_base.py`)](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py): versiones de `visionos`, `web_safari`, `web_embedded` y `tv`
+- [yt-dlp: constantes de clientes (`_base.py`)](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py): versiones de `visionos`, `tv_samsung`, `web_safari`, `web_embedded` y `tv`; nota de que `web_safari` solo da HLS con sesión desde 2026.07 (revisado el 2 de noviembre de 2026)
+- [yt-dlp: `_video.py`](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_video.py): `_DEFAULT_CLIENTS = ('tv_samsung', 'visionos', 'web')`, `_download_player_url` (`/iframe_api`), regex de `signatureTimestamp`, `_invalid_player_response`
+- [yt-dlp #17723](https://github.com/yt-dlp/yt-dlp/pull/17723) y [#17805](https://github.com/yt-dlp/yt-dlp/pull/17805): cliente `tv_samsung` y su uso por defecto (10 de octubre de 2026)
+- [yt-dlp #17461](https://github.com/yt-dlp/yt-dlp/pull/17461): `android_vr` da 403 en todo desde el 17 de agosto de 2026
+- [yt-dlp #15865](https://github.com/yt-dlp/yt-dlp/issues/15865): «Sign in to confirm you're not a bot» significa que YouTube no confía en la IP
+- [Invidious: errores de YouTube explicados](https://docs.invidious.io/youtube-errors-explained/): el aviso de bot como bloqueo de IP; PO tokens con BotGuard
+- [RustyPipe](https://codeberg.org/ThetaDev/rustypipe): cliente de YouTube en Rust; pasa a cookies cuando la IP está bloqueada
+- [NewPipe Extractor: `PoTokenProvider`](https://teamnewpipe.github.io/NewPipeExtractor/javadoc/org/schabi/newpipe/extractor/services/youtube/PoTokenProvider.html)
+- [streamlink: plugin de Twitch](https://github.com/streamlink/streamlink/blob/master/src/streamlink/plugins/twitch.py): detección de anuncios por `EXT-X-DATERANGE` (`twitch-stitched-ad`)

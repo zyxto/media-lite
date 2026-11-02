@@ -32,6 +32,18 @@ Consecuencias para el roadmap:
 - Desde el entorno de desarrollo, YouTube respondió «confirmá que no sos un bot» a `visionos` y `tv`,
   y «video no disponible» también al cliente WEB normal. **No es concluyente**: ese entorno está
   bloqueado para YouTube. Hay que repetir la prueba desde una red residencial (pendiente).
+- 2 de noviembre de 2026: la red de la laptop es residencial (Telmex, AR). La prueba no se pudo
+  correr porque el clasificador de permisos de Claude Code bloquea los pedidos del agente a
+  `/player`. La tiene que correr el usuario (ver «Pruebas contra YouTube» en la Fase 4 del roadmap).
+- **Prueba en la laptop (2 de noviembre de 2026, antiX, yt-dlp 2026.10.21, sin motor JS):**
+  `yt-dlp -v -F --extractor-args "youtube:player_client=visionos,tv_samsung" dQw4w9WgXcQ`.
+  **No hubo aviso de bot.** `visionos` entregó HLS `avc1` 144p–1080p (229–232, 270) con audio
+  aparte (233/234), y DASH directo `avc1` 160/133/134/135/136/137 + `mp4a` 139/140. A 480p, DASH 135
+  pesa 530 kb/s y HLS 231 pesa 863 kb/s. No vino el itag 18. `tv_samsung` trajo un anuncio previo de
+  6 s, y sus formatos no salieron porque no había motor JS. Reproductor: `4efb8b2c`.
+- `tv_samsung` (cliente por defecto de yt-dlp desde el 10/10/2026): TVHTML5 `5.20260707`,
+  Samsung / UKS9800, Tizen 2.4.0. Necesita `sig` + `n` y no pide PO token.
+  `web_safari` solo da HLS con sesión desde 2026.07, y `android_vr` da 403 desde el 17/08/2026.
 - Constantes vigentes en yt-dlp (`yt_dlp/extractor/youtube/_base.py`, revisado el 1 de noviembre de 2026):
   - `visionos`: `clientName` VISIONOS, `clientVersion` 1.02, `osVersion` 26.5.23O471, sin JS obligatorio.
   - `web_safari`: WEB, `clientVersion` 2.20260708.00.00, UA de Safari.
