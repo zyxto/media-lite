@@ -457,12 +457,12 @@ Portar `plugins/youtube/script.js` y `comun.js`, y sumar el solucionador de desa
 
 **4a. Solucionador (`crates/ytsolver`), 1 semana** — hecho en lo que se puede verificar sin YouTube
 
-- [ ] Obtener la URL y el `player_id` de `base.js`: **pasa a 4b** («Reproductor JS»). Se saca de `/iframe_api`, no de la página del video, que es más pesada.
+- [x] Obtener la URL y el `player_id` de `base.js`: hecho en la 4b («Reproductor JS», `player_js.rs`). Se saca de `/iframe_api`, no de la página del video, que es más pesada.
 - [x] Subcomando `media-lite --yt-solver`: lee el JSON de ejs por stdin y responde por stdout, en un proceso aparte. QuickJS-NG (`rquickjs` 0.14) con límite de memoria de 256 MB; el padre mata el proceso a los 60 s.
 - [x] Caché por `player_id` del `preprocessed_player` y de los `n` y `sig` ya resueltos. Los ids se validan (8 hex) para no escribir fuera de la carpeta. La poda de 14 días está escrita (`Cache::prune`); falta llamarla al arrancar.
-- [ ] Preprocesar en segundo plano al encontrar un `base.js` nuevo: **pasa a 4b** («Reproductor JS»), al arrancar la app.
+- [x] Preprocesar en segundo plano al encontrar un `base.js` nuevo: hecho en la 4b (`Provider::warm`, al arrancar la app).
 - [x] Actualizar los scripts desde GitHub con verificación: `update::fetch_latest` baja el último release y compara cada archivo con el digest sha256 que publica la API (verificado en vivo). La copia instalada en `~/.local/share/media-lite/ejs/` se usa solo si su manifiesto y sus hashes coinciden. **Falta el botón en Ajustes** (Fase 7).
-- [x] Pruebas con un `base.js` real: `solves_n_challenges_like_node` (prueba ignorada, con `MEDIA_LITE_TEST_BASEJS`) da los mismos resultados que Node. Prueba de punta a punta del proceso aparte: pendiente de correrla con el binario.
+- [x] Pruebas con un `base.js` real: `solves_n_challenges_like_node` (prueba ignorada, con `MEDIA_LITE_TEST_BASEJS`) da los mismos resultados que Node. Prueba de punta a punta del proceso aparte: hecha con `the_solver_resolves_n_challenges_with_the_real_player` (`crates/providers/tests/youtube_live.rs`, sin `/player`): el binario prepara el reproductor real y resuelve dos desafíos `n`.
 
 **Pruebas contra YouTube (leer antes de empezar).** En modo auto, el clasificador de permisos de
 Claude Code **rechaza** que el agente haga pedidos de prueba a `youtubei/v1/player` y los marca como
