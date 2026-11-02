@@ -614,6 +614,7 @@ impl Provider for Pluto {
                 audio_url: None,
                 drop: AD_PATTERNS.iter().map(|s| s.to_string()).collect(),
                 twitch_ads: false,
+                available_at: None,
             }],
         })
     }

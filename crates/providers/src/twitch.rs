@@ -133,6 +133,7 @@ impl Twitch {
                 audio_url: None,
                 drop: Vec::new(),
                 twitch_ads: true,
+                available_at: None,
             }],
         })
     }
@@ -162,6 +163,7 @@ impl Twitch {
                 audio_url: None,
                 drop: Vec::new(),
                 twitch_ads: false,
+                available_at: None,
             }],
         })
     }

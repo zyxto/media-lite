@@ -131,6 +131,7 @@ impl Provider for Demo {
                 audio_url: None,
                 drop: Vec::new(),
                 twitch_ads: false,
+                available_at: None,
             }],
         })
     }

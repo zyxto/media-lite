@@ -90,6 +90,22 @@ pub fn show_item(app: &App, index: usize) {
     let Some(item) = item else {
         return;
     };
+    // Las fuentes de YouTube se piden al abrir el detalle: «Ver» ya las tiene cuando se aprieta.
+    if item.platform == Platform::YouTube
+        && matches!(item.kind, Kind::Video | Kind::Short | Kind::Live)
+    {
+        if let Some(provider) = app
+            .providers
+            .iter()
+            .find(|p| p.platform() == item.platform)
+            .cloned()
+        {
+            let warm = item.clone();
+            app.pool.run(move || {
+                let _ = provider.details(&warm);
+            });
+        }
+    }
     present(
         app,
         &item,

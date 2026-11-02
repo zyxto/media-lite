@@ -3,8 +3,58 @@
 # ~/.config/media-lite/clients.toml (reemplaza el bloque con el mismo nombre).
 #
 # `number` es el valor de la cabecera X-YouTube-Client-Name. `name` es el de `context.client`.
+# `needs_js`: la respuesta necesita el solucionador (`sig` y `n`).
 
+# Orden de la cascada para reproducir. `hedge_ms`: a los cuántos ms sin respuesta de visionos sale
+# el siguiente cliente, en paralelo. Con cookies, `cookies_order` reemplaza a `order`.
+[cascade]
+order = ["visionos", "tv_samsung", "web_embedded"]
+cookies_order = ["tv_samsung", "web_embedded", "web_safari"]
+hedge_ms = 2000
+
+# Catálogo (búsqueda, portada, canales).
 [web]
 name = "WEB"
 number = 1
 version = "2.20260708.00.00"
+
+# Reproducción, sin JavaScript ni PO token. Primero, porque es el más rápido.
+[visionos]
+name = "VISIONOS"
+number = 101
+version = "1.02"
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+device_make = "Apple"
+device_model = "RealityDevice17,1"
+os_name = "visionOS"
+os_version = "26.5.23O471"
+needs_js = false
+
+# Reproducción de respaldo. Puede traer un anuncio previo que hay que esperar.
+[tv_samsung]
+name = "TVHTML5"
+number = 7
+version = "5.20260707"
+user_agent = "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1"
+device_make = "Samsung"
+device_model = "UKS9800"
+os_name = "Tizen"
+os_version = "2.4.0"
+needs_js = true
+
+# Videos que se pueden incrustar.
+[web_embedded]
+name = "WEB_EMBEDDED_PLAYER"
+number = 56
+version = "2.20260708.00.00"
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"
+needs_js = true
+embed_url = "https://www.reddit.com/"
+
+# Solo con cookies de la cuenta (HLS con sesión).
+[web_safari]
+name = "WEB"
+number = 1
+version = "2.20260708.00.00"
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+needs_js = true

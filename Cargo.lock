@@ -2632,6 +2632,7 @@ version = "0.4.0"
 dependencies = [
  "media-lite-core",
  "media-lite-providers",
+ "media-lite-ytsolver",
  "serde",
  "serde_json",
 ]
@@ -2673,8 +2674,10 @@ dependencies = [
  "image",
  "log",
  "media-lite-core",
+ "media-lite-ytsolver",
  "serde",
  "serde_json",
+ "sha1",
  "toml",
 ]
 

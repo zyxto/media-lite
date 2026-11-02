@@ -216,6 +216,10 @@ pub struct Source {
     /// Quitar los cortes publicitarios de Twitch (`EXT-X-DATERANGE` de `twitch-stitched-ad`).
     #[serde(default)]
     pub twitch_ads: bool,
+    /// Desde cuándo se puede ver (segundos desde la época). Si es posterior a ahora, YouTube sirve
+    /// el video después de un anuncio previo: la app espera y lo dice.
+    #[serde(default)]
+    pub available_at: Option<u64>,
 }
 
 /// Una temporada de una serie, con sus episodios.

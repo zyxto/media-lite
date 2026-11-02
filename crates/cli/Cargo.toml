@@ -10,5 +10,6 @@ rust-version.workspace = true
 [dependencies]
 media-lite-core.workspace = true
 media-lite-providers.workspace = true
+media-lite-ytsolver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

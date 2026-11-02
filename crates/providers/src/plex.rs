@@ -610,6 +610,7 @@ impl Provider for Plex {
                 audio_url: None,
                 drop: Vec::new(),
                 twitch_ads: false,
+                available_at: None,
             }],
         })
     }

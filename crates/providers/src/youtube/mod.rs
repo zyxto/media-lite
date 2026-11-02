@@ -5,9 +5,15 @@
 
 pub mod catalog;
 pub mod clients;
+pub mod cookies;
+pub mod external;
 pub mod innertube;
+pub mod player_js;
+pub mod resolve;
+pub mod streams;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use media_lite_core::{
     Caps, Category, Details, Error, ErrorKind, Item, Kind, Page, Platform, Result, Season, Section,
@@ -16,6 +22,7 @@ use media_lite_core::{
 use crate::Provider;
 use catalog::{collect, Owner};
 use innertube::Innertube;
+use resolve::Resolver;
 
 /// Pestañas de un canal (el parámetro `params` de `browse`), como las usa Sanson.
 const TAB_VIDEOS: &str = "EgZ2aWRlb3PyBgQKAjoA";
@@ -32,15 +39,45 @@ const TOPICS: [(&str, &str); 2] = [
 /// El tema «En vivo» de YouTube: la sección de directos.
 const LIVE_TOPIC: &str = "UC4R8DWoMoI7CAwX8_LjQHig";
 
+/// El id de un video a partir de un id o de una URL de YouTube (`watch?v=`, `youtu.be/`, `/shorts/`,
+/// `/live/`, `/embed/`).
+pub fn video_id_of(text: &str) -> Option<String> {
+    let text = text.trim();
+    if resolve::valid_video_id(text) {
+        return Some(text.to_string());
+    }
+    for marker in ["v=", "youtu.be/", "/shorts/", "/live/", "/embed/"] {
+        if let Some(pos) = text.find(marker) {
+            let id: String = text[pos + marker.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if resolve::valid_video_id(&id) {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
 pub struct YouTube {
-    api: Innertube,
+    api: Arc<Innertube>,
+    resolver: Arc<Resolver>,
 }
 
 impl YouTube {
+    /// `config_dir` tiene los clientes, las cookies y el `visitorData`. El solucionador corre con el
+    /// propio binario (`--yt-solver`), y la caché del reproductor va en la caché de media-lite.
     pub fn new(config_dir: &Path) -> YouTube {
-        YouTube {
-            api: Innertube::new(config_dir),
-        }
+        let api = Arc::new(Innertube::new(config_dir));
+        let exe = std::env::current_exe().unwrap_or_default();
+        let resolver = Arc::new(Resolver::new(
+            config_dir,
+            &media_lite_core::paths::cache_dir(),
+            Arc::clone(&api),
+            exe,
+        ));
+        YouTube { api, resolver }
     }
 
     /// Una página de un canal temático (o la de una pestaña ya conocida, con su token).
@@ -108,9 +145,26 @@ impl Provider for YouTube {
         })
     }
 
-    fn details(&self, _item: &Item) -> Result<Details> {
-        // Los streams llegan con la fase 4b (`/player`).
-        Err(Error::unsupported())
+    fn details(&self, item: &Item) -> Result<Details> {
+        match item.kind {
+            Kind::Video | Kind::Short | Kind::Live => {
+                let resolved = self.resolver.resolve(&item.id)?;
+                Ok(Details {
+                    item: item.clone(),
+                    description: item.description.clone(),
+                    sources: resolved.sources,
+                })
+            }
+            _ => Err(Error::unsupported()),
+        }
+    }
+
+    fn invalidate(&self, item: &Item) {
+        self.resolver.forget(&item.id);
+    }
+
+    fn warm(&self) {
+        self.resolver.warm();
     }
 
     /// Un canal se abre como serie: «Videos», «En vivo» y «Shorts», cada pestaña como temporada.
@@ -158,5 +212,28 @@ impl Provider for YouTube {
             ));
         }
         Ok(seasons)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn video_id_of_reads_urls_and_ids() {
+        assert_eq!(video_id_of("dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
+        assert_eq!(
+            video_id_of("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            video_id_of("https://youtu.be/dQw4w9WgXcQ?si=x").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            video_id_of("https://www.youtube.com/shorts/dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(video_id_of("https://www.youtube.com/@canal"), None);
     }
 }

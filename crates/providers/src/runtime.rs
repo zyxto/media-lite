@@ -380,6 +380,7 @@ impl Provider for Runtime {
                     audio_url: None,
                     drop: Vec::new(),
                     twitch_ads: false,
+                    available_at: None,
                 });
             }
         } else if let Some(url) = urls_in(&text, "/a.mp4").into_iter().next() {
@@ -391,6 +392,7 @@ impl Provider for Runtime {
                 audio_url: None,
                 drop: Vec::new(),
                 twitch_ads: false,
+                available_at: None,
             });
         }
         if sources.is_empty() {

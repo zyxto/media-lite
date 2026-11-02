@@ -16,6 +16,10 @@ pub enum ErrorKind {
     Login,
     /// La respuesta llegó pero no se entendió (cambió el formato).
     Parse,
+    /// YouTube pide confirmar que no es un bot (la IP no es de confianza).
+    BotCheck,
+    /// El solucionador de JavaScript no pudo resolver los desafíos (YouTube cambió).
+    Solver,
     /// Error local de disco o de otro tipo.
     Other,
 }

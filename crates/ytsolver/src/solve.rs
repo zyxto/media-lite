@@ -111,3 +111,33 @@ pub fn solve(exe: &Path, cache: &Cache, req: &Request) -> Result<Solutions, Stri
     }
     Ok(out)
 }
+
+/// Prepara un reproductor (`base.js`) para que las siguientes resoluciones sean rápidas. Si ya
+/// está preparado, no hace nada. Es lo lento (7 s la primera vez): se llama en segundo plano.
+pub fn preprocess(
+    exe: &Path,
+    cache: &Cache,
+    player_id: &str,
+    player_js: &str,
+) -> Result<(), String> {
+    if !valid_id(player_id) {
+        return Err("id de reproductor inválido".into());
+    }
+    if cache.preprocessed(player_id).is_some() {
+        return Ok(());
+    }
+    let input = json!({
+        "type": "player",
+        "player": player_js,
+        "output_preprocessed": true,
+        "requests": []
+    });
+    let reply = run_child(exe, &input, Duration::from_secs(60))?;
+    let pre = reply
+        .get("preprocessed_player")
+        .and_then(Value::as_str)
+        .ok_or("el solucionador no devolvió el reproductor preparado")?;
+    cache
+        .store_preprocessed(player_id, pre)
+        .map_err(|e| e.to_string())
+}

@@ -6,6 +6,7 @@
 //!   Al terminar, cuenta cinco segundos y pasa al siguiente.
 //! - El idioma de audio elegido sigue en el próximo episodio de la cola.
 
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -194,6 +195,20 @@ fn request_with(app: &Rc<App>, item: Item, queue: Vec<Item>, carry: Option<Strin
     });
 }
 
+thread_local! {
+    /// Cambia cada vez que empieza una reproducción o se detiene: cancela las esperas pendientes.
+    static TICKET: Cell<u64> = const { Cell::new(0) };
+    /// Video que ya se volvió a pedir tras un error de mpv (una sola vez, para no reintentar sin fin).
+    static RETRIED: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+fn new_ticket() -> u64 {
+    TICKET.with(|t| {
+        t.set(t.get() + 1);
+        t.get()
+    })
+}
+
 fn begin(
     app: &Rc<App>,
     item: Item,
@@ -204,16 +219,68 @@ fn begin(
 ) {
     // Terminó la preparación, salga como salga: el botón vuelve a estar disponible.
     state::set_activity(app, crate::Activity::Idle);
+    let ticket = new_ticket();
     match result {
         Ok(details) => {
             let quality = app.settings.borrow().quality;
             match choose_source(&details.sources, quality) {
-                Some(source) => start(app, &item, &source, queue, index, carry),
+                Some(source) => {
+                    // YouTube sirve algunos videos después de un anuncio previo: se avisa y se espera.
+                    let wait = source
+                        .available_at
+                        .map(|at| at.saturating_sub(now()))
+                        .unwrap_or(0);
+                    if wait == 0 {
+                        start(app, &item, &source, queue, index, carry);
+                    } else {
+                        set_status(app, format!("YouTube hace esperar {wait} s"));
+                        slint::Timer::single_shot(Duration::from_secs(wait), move || {
+                            with_app(|app| {
+                                if TICKET.with(|t| t.get()) == ticket {
+                                    start(app, &item, &source, queue, index, carry);
+                                }
+                            });
+                        });
+                    }
+                }
                 None => set_error(app, "Este título no tiene fuentes reproducibles todavía."),
             }
         }
         Err(e) => set_error(app, e.to_string()),
     }
+}
+
+/// Una URL de YouTube que venció (mpv recibe un error, casi siempre un 403) se vuelve a pedir una
+/// vez. Retoma en la posición guardada en el historial. Devuelve `false` si no corresponde.
+fn retry_expired_youtube(app: &Rc<App>) -> bool {
+    let (item, queue) = {
+        let guard = app.playback.borrow();
+        let Some(pb) = guard.as_ref() else {
+            return false;
+        };
+        if pb.platform != Platform::YouTube {
+            return false;
+        }
+        (pb.item.clone(), pb.queue.clone())
+    };
+    let first_try = RETRIED.with(|r| {
+        let mut retried = r.borrow_mut();
+        if retried.as_deref() == Some(item.id.as_str()) {
+            false
+        } else {
+            *retried = Some(item.id.clone());
+            true
+        }
+    });
+    if !first_try {
+        return false;
+    }
+    if let Some(provider) = app.providers.iter().find(|p| p.platform() == item.platform) {
+        provider.invalidate(&item);
+    }
+    set_status(app, "La URL del video venció: se pide de nuevo…");
+    request(app, item, queue);
+    true
 }
 
 /// URL que mpv abre para una fuente: las HLS pasan por el proxy, con la calidad pedida.
@@ -440,6 +507,9 @@ fn apply(app: &Rc<App>, event: Event) {
             // Un cambio de archivo (`loadfile replace`) también avisa `stop`: no es el fin.
             "eof" => on_eof(app),
             "error" => {
+                if retry_expired_youtube(app) {
+                    return;
+                }
                 set_error(app, "Se cortó la reproducción.");
                 finish(app, false);
             }
@@ -663,6 +733,8 @@ pub fn seek_ratio(app: &Rc<App>, ratio: f64) {
 /// Cierra la reproducción y la ventana de mpv.
 pub fn stop(app: &Rc<App>) {
     maybe_save(app, true);
+    new_ticket();
+    RETRIED.with(|r| *r.borrow_mut() = None);
     *app.playback.borrow_mut() = None;
     *app.player.borrow_mut() = None;
     crate::chat::end(app);
@@ -902,6 +974,7 @@ mod tests {
             audio_url: None,
             drop: Vec::new(),
             twitch_ads: false,
+            available_at: None,
         }
     }
 

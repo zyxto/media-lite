@@ -120,6 +120,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         grid: RefCell::new(grid),
         chat: RefCell::new(chat::Chat::default()),
     });
+    // Lo lento de cada plataforma (el reproductor de YouTube, por ejemplo) se prepara en segundo
+    // plano, sin bloquear la ventana.
+    for provider in &app.providers {
+        let provider = Arc::clone(provider);
+        app.pool.run(move || provider.warm());
+    }
     state::install(app.clone());
 
     window.global::<Theme>().set_dark(settings.theme_dark);

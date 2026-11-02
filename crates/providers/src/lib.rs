@@ -46,6 +46,13 @@ pub trait Provider: Send + Sync {
     fn seasons(&self, _series: &Item) -> Result<Vec<Season>> {
         Err(Error::unsupported())
     }
+
+    /// Se llama en segundo plano al arrancar la app, para dejar listo lo lento (por ejemplo, el
+    /// reproductor de YouTube). No devuelve nada: los errores quedan en el registro.
+    fn warm(&self) {}
+
+    /// Olvida lo guardado de un elemento (una URL que venció). La próxima vez se vuelve a pedir.
+    fn invalidate(&self, _item: &Item) {}
 }
 
 /// Proveedores activos, en el orden de la barra lateral.

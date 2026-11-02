@@ -478,86 +478,62 @@ Claude Code **rechaza** que el agente haga pedidos de prueba a `youtubei/v1/play
 - El catálogo (`browse`, `search`, `next`) no es parte de este bloqueo, pero conviene probarlo igual
   con fixtures.
 
-**4b. Cascada de clientes**
+**4b. Cascada de clientes** — **implementado el 2 de noviembre de 2026.** El agente no pidió `/player`
+a YouTube (ver «Pruebas contra YouTube»): lo que sigue requiere que el usuario lo corra.
 
-Antes que nada: agregar `Platform::YouTube` (clave `youtube`, nombre «YouTube») en
-`crates/core/src/model.rs` y registrarlo en `providers::registry`.
+Hecho en la 4b, con los archivos `crates/providers/src/youtube/`:
 
-Archivos nuevos: `crates/providers/src/youtube/{mod.rs, innertube.rs, player_js.rs, streams.rs}` y
-`crates/providers/clients.toml` (incluido con `include_str!` y reemplazable desde
-`~/.config/media-lite/clients.toml`). `providers` pasa a depender de `media-lite-ytsolver`, y el
-ejecutable del solucionador es `std::env::current_exe()` con `--yt-solver` (ya existe en
-`app/src/main.rs`).
+- `mod.rs` (proveedor: `details`, `warm`, `invalidate`), `resolve.rs` (cascada, caché de 5 h,
+  clasificación de `playabilityStatus`), `streams.rs` (formatos, `signatureCipher`, `n`, espera del
+  anuncio), `player_js.rs` (`player_id`, `base.js`, `sts`), `cookies.rs` (SAPISIDHASH),
+  `external.rs` (yt-dlp de respaldo), `clients.rs` y `clients.toml`.
+- Probado sin red con fixtures **sintéticos** (no son respuestas de YouTube): descifrado, `n`, elección
+  de formatos, espera del anuncio, clasificación, orden de la cascada y el error que se muestra.
+- Probado **en vivo** sin tocar `/player`: `warm()` baja el `base.js`, lo prepara con el solucionador
+  y guarda un `sts` de 5 dígitos (32 s la primera vez).
 
-- [ ] **`clients.toml`**: una tabla por cliente con `name`, `number` (`X-YouTube-Client-Name`),
-      `version`, `user_agent`, `device_make`, `device_model`, `os_name`, `os_version`, `needs_js` y
-      `embed_url` (solo `web_embedded`: `https://www.reddit.com/`). Más `order = ["visionos",
-      "tv_samsung", "web_embedded"]` y `hedge_ms = 2000` (a los cuántos ms sin respuesta de `visionos`
-      sale también `tv_samsung`). Valores iniciales, copiados de yt-dlp `_base.py`:
-      - `visionos`: VISIONOS, 101, `1.02`, Apple / RealityDevice17,1, visionOS 26.5.23O471, UA
-        `Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15`, `needs_js = false`.
-      - `tv_samsung`: TVHTML5, 7, `5.20260707`, Samsung / UKS9800, Tizen 2.4.0, UA
-        `Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1`, `needs_js = true`.
-      - `web_embedded`: WEB_EMBEDDED_PLAYER, 56, `2.20260708.00.00`, UA de Safari
-        `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)`, `needs_js = true`.
-- [ ] **`visitorData`** (`innertube.rs`): `POST /youtubei/v1/visitor_id` con el contexto WEB, y si no
-      viene, `browse` con `FEwhat_to_watch`. Se guarda en `youtube.json` con la fecha y vence a los
-      3 días. Va en `context.client.visitorData` de cada `/player`, y también en el encabezado
-      `X-Goog-Visitor-Id`. También se actualiza con `responseContext.visitorData` de cada respuesta.
-- [ ] **Reproductor JS** (`player_js.rs`): `player_id` desde `/iframe_api`, URL
-      `https://www.youtube.com/s/player/<id>/player_ias.vflset/en_US/base.js`, `sts` por regex
-      (ver 2.4), y preprocesado en segundo plano con `ytsolver::solve` (el `player_js` solo se pasa
-      si no hay caché). Llamar a `Cache::prune(MAX_AGE)` al arrancar.
-- [ ] **`/player`**: `POST https://www.youtube.com/youtubei/v1/player?prettyPrint=false` con
-      `{context:{client:{…, hl, gl, visitorData}}, videoId, contentCheckOk:true, racyCheckOk:true,
-      playbackContext:{contentPlaybackContext:{html5Preference:"HTML5_PREF_WANTS",
-      signatureTimestamp:<sts>}}}`. Encabezados: `User-Agent`, `X-YouTube-Client-Name`,
-      `X-YouTube-Client-Version`, `Origin: https://www.youtube.com` y `Content-Type`.
-      **Validar que `videoDetails.videoId` sea el pedido** (YouTube a veces responde otro video, ver
-      NewPipe #8713).
-- [ ] **Clasificar `playabilityStatus`**: `OK` sigue. `LOGIN_REQUIRED` con «bot» en el `reason`
-      es `YtError::BotCheck`: se cortan los demás clientes sin cookies y se va a cookies.
-      `LOGIN_REQUIRED` por edad y `UNPLAYABLE` pasan al siguiente cliente. `ERROR` es «video no
-      disponible».
-- [ ] **Descifrar** (`streams.rs`): si el formato trae `signatureCipher`, se parsea como query
-      (`s`, `sp`, que por defecto es `signature`, y `url`). Se resuelve `s` como desafío `sig` y se
-      agrega `&<sp>=<resultado>`. En toda URL con parámetro `n`, se resuelve como desafío `n` y se
-      reemplaza. Todos los desafíos de un video van **en una sola** llamada a `ytsolver::solve`.
-      Si el solucionador no puede, la falla es `YtError::Solver` y el mensaje dice «YouTube cambió;
-      actualizá el soporte en Ajustes».
-- [ ] **Elegir formatos**: descartar los que traen `drmFamilies`, los que no tienen `url` ni
-      `signatureCipher` (SABR) y los que no son `avc1`/`mp4a`. Prioridad: DASH `avc1` ≤ calidad +
-      itag 140 (`Source.audio_url`); si no hay, `hlsManifestUrl`; itag 18 solo si viene (de
-      `tv_samsung`). Los directos van por `hlsManifestUrl`. Generar un `Source` por altura
-      (240/360/480/720) para que el «bajar calidad por traba» que ya existe tenga a dónde ir.
-- [ ] **Respaldo y caché** (`mod.rs`): `visionos` primero. Si falla, o si no respondió en
-      `hedge_ms`, sale `tv_samsung` en otro hilo (`std::thread::scope`, sin tokio). Se usa el
-      primero válido. `StreamCache` en memoria: `videoId → (Vec<Source>, available_at, Instant)`,
-      vence a las 5 h. Se recuerda qué cliente anduvo.
-- [ ] **Espera del anuncio previo** (solo `tv_samsung`): calcular `available_at` como yt-dlp
-      (`_get_available_at_timestamp` en `_video.py`, ver «Apertura rápida» punto 4). Si al apretar
-      «Ver» todavía no llegó la hora, `playback.rs` muestra «YouTube hace esperar N s» con una
-      cuenta regresiva y recién después hace `loadfile`. No se saltea.
-- [ ] **403 o URL vencida** (~6 h, o cambió la IP): `playback.rs` saca el elemento de la caché,
-      vuelve a llamar a `details()` y retoma con `start=` en la misma posición. Un solo reintento.
-- [ ] **Cookies mínimas (adelantado de la Fase 8)**: en Ajustes, «Pegar cookies de YouTube»
-      (formato Netscape o encabezado `Cookie:`), guardadas en `cookies/youtube.txt` con permisos
-      0600 y nunca en los logs. Con cookies, el `/player` lleva `Cookie`, `X-Goog-AuthUser: 0`,
-      `X-Origin` y `Authorization: SAPISIDHASH <ts>_<sha1(ts + " " + SAPISID + " " + origin)>` (crate
-      `sha1`), y la cascada pasa a `tv_samsung` → `web_embedded` → `web_safari` (HLS).
-- [ ] **yt-dlp externo**: solo si `yt-dlp --version` da ≥ 2025.11.12. Se corre
-      `yt-dlp -J --no-playlist -f "bv[vcodec^=avc1][height<=H]+ba[acodec^=mp4a]/18" <url>` y se
-      toman `requested_formats[].url`. Si encuentra cookies, se las pasa con `--cookies`.
-- [ ] **Mensajes** (en español, en la barra): «YouTube pide confirmar que no sos un bot. Pasa con
-      VPN o redes marcadas: desactivá la VPN o cargá tus cookies en Ajustes», «YouTube cambió:
-      actualizá el soporte en Ajustes», «Este video pide iniciar sesión (edad)», «Video no
-      disponible en tu país».
-- [ ] **CLI**: `media-lite-cli yt-resolve <id|url> [--client X] [--dump DIR] [--timing]` imprime
-      el cliente ganador, los `Source` elegidos y el tiempo de cada paso (`visitorData`, `/player`,
-      solucionador). Con `--dump` guarda las respuestas crudas como fixtures, **sin cookies ni
-      `visitorData`**.
-- [ ] **Pruebas sin red**: descifrado (`signatureCipher` → URL), elección de formatos, clasificación
-      de `playabilityStatus` y parseo de `clients.toml`, todo con fixtures.
+- [x] **`clients.toml`**: `[cascade]` (`order`, `cookies_order`, `hedge_ms = 2000`), y los clientes
+      `visionos` (sin JS), `tv_samsung` (JS, espera de anuncio), `web_embedded` (con `embed_url`),
+      `web_safari` (solo con cookies) y `web` (catálogo). Reemplazable desde `~/.config/media-lite/clients.toml`.
+- [x] **`visitorData`**: hecho en la 4c (3 días, en `youtube.json`). También va en `X-Goog-Visitor-Id`.
+- [x] **Reproductor JS** (`player_js.rs`): `player_id` desde `/iframe_api`, URL del `base.js`, `sts` por
+      regex, y preparación en segundo plano al arrancar la app (`Provider::warm`). Se poda la caché de
+      14 días al arrancar (`Cache::prune`).
+- [x] **`/player`**: el contexto, `playbackContext.signatureTimestamp` cuando hay `sts`, y las cabeceras
+      de cada cliente. Se valida `videoDetails.videoId` contra el pedido.
+- [x] **Clasificar `playabilityStatus`**: `OK` sigue; `LOGIN_REQUIRED` con «bot» es `ErrorKind::BotCheck`
+      (con cookies no se corta: se prueban los demás clientes); `LOGIN_REQUIRED` por edad es `Login`;
+      `UNPLAYABLE` y `ERROR` son «no disponible». El solucionador falla con `ErrorKind::Solver`.
+- [x] **Descifrar** (`streams.rs`): `signatureCipher` (`s`, `sp`, `url`), y el `n` de cada URL. Todos
+      los desafíos del video van en **una** llamada a `ytsolver::solve`.
+- [x] **Elegir formatos**: DASH `avc1` por altura (el de mayor bitrate) con el audio 140 como
+      `audio_url`; si no hay, `hlsManifestUrl`; el itag 18 solo si hace falta (360p). Los directos,
+      siempre HLS. Sin DRM y sin SABR.
+- [x] **Respaldo y caché**: `visionos` primero; si no responde en `hedge_ms` o falla, sale `tv_samsung`
+      en paralelo y gana el primero que sirva. Se recuerda el último cliente que anduvo (sale primero).
+      Caché de streams por video, 5 h.
+- [x] **Espera del anuncio previo**: `available_at` como yt-dlp. La app muestra «YouTube hace esperar N s»
+      y arranca al cumplirse. Si se cambia de video o se detiene, la espera se cancela.
+- [x] **403 o URL vencida**: `Provider::invalidate` tira lo guardado, se vuelve a pedir y se retoma en
+      la posición del historial. Un solo reintento por video.
+- [x] **Cookies** (`cookies/youtube.txt`, formato Netscape o `Cookie:`): `/player` lleva `Cookie`,
+      `X-Goog-AuthUser: 0` y `Authorization: SAPISIDHASH`, y la cascada pasa a `cookies_order`. Las
+      cookies no se registran. Verificado el hash contra un vector calculado con `hashlib`.
+- [x] **yt-dlp externo** (último recurso): solo si `yt-dlp --version` da ≥ 2025.11.12. Corre con
+      `-J -f "bv[vcodec^=avc1]+ba[acodec^=mp4a]/18"`, un tiempo límite de 60 s y las cookies si hay.
+      En esta máquina el yt-dlp es 2024.04.09: no se usa.
+- [x] **Mensajes** (en español): «YouTube pide confirmar que no sos un bot…», «YouTube cambió;
+      actualizá el soporte en Ajustes.», «Este video pide iniciar sesión (edad).», «Video no disponible
+      en tu país.».
+- [x] **CLI**: `media-lite-cli yt-resolve <id|url> [--client X] [--dump DIR] [--timing]`. Imprime en JSON
+      el cliente ganador, las fuentes, `available_at` y cada intento con sus tiempos. `--dump` guarda
+      las respuestas crudas sin `visitorData`. (El subcomando `--yt-solver` también lo atiende la CLI.)
+- [ ] **Ajustes: «Pegar cookies de YouTube»** y **«Actualizar el soporte de YouTube»**: la UI no está.
+      Por ahora las cookies se ponen a mano en `~/.config/media-lite/cookies/youtube.txt` (0600).
+      Pasa a la Fase 7 (Ajustes unificados), que ya tiene el botón pendiente.
+- [ ] **Verificación en vivo** (la corre el usuario, ver «Pruebas contra YouTube»):
+      `media-lite-cli yt-resolve dQw4w9WgXcQ --timing`, y después reproducir un video en la app. Con los
+      `--dump` se pueden reemplazar los fixtures sintéticos por respuestas reales.
 
 **Terminado cuando** `media-lite-cli yt-resolve dQw4w9WgXcQ --timing`, corrido por el usuario,
 muestre `Source` H.264 en < 3 s con la caché caliente, y el video se vea en mpv desde la app.

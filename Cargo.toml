@@ -31,6 +31,7 @@ crossbeam-channel = "0.5"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 lru = "0.19"
 sha2 = "0.11"
+sha1 = "0.11"
 base64 = "0.23"
 log = "0.4"
 url = "2.5"
