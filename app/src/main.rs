@@ -162,7 +162,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // La última entrada busca en todas las plataformas a la vez.
     platform_names.push(SharedString::from("Todas las plataformas"));
     window.set_platforms(ModelRc::new(VecModel::from(platform_names)));
-    window.set_sections(state::section_labels());
     window.set_columns(columns as i32);
     window.window().set_size(slint::LogicalSize::new(
         settings.window_width as f32,
@@ -359,6 +358,15 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
         window.on_shuffle_requested(move || {
             crate::music::toggle_shuffle();
             playback::sync_ui(&app);
+            let on = crate::music::modes().shuffle;
+            state::set_status(
+                &app,
+                if on {
+                    "Aleatorio: sí"
+                } else {
+                    "Aleatorio: no"
+                },
+            );
         });
     }
     {
@@ -366,6 +374,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
         window.on_repeat_requested(move || {
             crate::music::cycle_repeat();
             playback::sync_ui(&app);
+            state::set_status(&app, crate::music::modes().repeat.label());
         });
     }
     {

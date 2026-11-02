@@ -62,10 +62,24 @@ export struct CardData {
     index: int,
 }
 
+// Una fila de Ajustes. `group` va solo en la primera de cada grupo y pone su título arriba.
 export struct SettingRow {
+    group: string,
     label: string,
     value: string,
     note: string,
+    // Interruptor de sí / no (`on` es su estado).
+    switch: bool,
+    on: bool,
+    // Botón de acción en lugar de un valor.
+    action: bool,
+}
+
+// Una entrada de la lista de secciones: solo las que tiene la plataforma elegida. `index` es el
+// lugar de la sección en la lista completa.
+export struct SectionEntry {
+    label: string,
+    index: int,
 }
 
 export struct RowData {
@@ -83,9 +97,132 @@ export struct EpisodeData {
     index: int,
 }
 
+// Ícono dibujado con trazos propios (la app no lleva un set de íconos ni el soporte de SVG). Se tiñe
+// con `color`, así sigue al tema. Todos están pensados en una caja de 24 × 24.
+component Icon inherits Rectangle {
+    in property <string> glyph;
+    in property <color> tint: Theme.text;
+    in property <length> size: 18px;
+
+    width: root.size;
+    height: root.size;
+
+    // Rellenos
+    if root.glyph == "play" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M8 5 L19 12 L8 19 Z"; }
+    if root.glyph == "pause" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M7 5 H10.5 V19 H7 Z M13.5 5 H17 V19 H13.5 Z"; }
+    if root.glyph == "stop" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M6.5 6.5 H17.5 V17.5 H6.5 Z"; }
+    if root.glyph == "prev" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M6 5 H8.5 V19 H6 Z M19 5 V19 L9.5 12 Z"; }
+    if root.glyph == "next" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M15.5 5 H18 V19 H15.5 Z M5 5 L14.5 12 L5 19 Z"; }
+    if root.glyph == "rewind" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M11.5 6 V18 L3.5 12 Z M20.5 6 V18 L12.5 12 Z"; }
+    if root.glyph == "forward" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M3.5 6 V18 L11.5 12 Z M12.5 6 V18 L20.5 12 Z"; }
+    if root.glyph == "volume-down" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M3 9.5 H7 L12 5 V19 L7 14.5 H3 Z M15.5 11 H21 V13 H15.5 Z"; }
+    if root.glyph == "volume-up" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M3 9.5 H7 L12 5 V19 L7 14.5 H3 Z M15.5 11 H21 V13 H15.5 Z M17.25 9.25 H19.25 V14.75 H17.25 Z"; }
+    if root.glyph == "moon" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M20 14.5 A8 8 0 1 1 9.5 4 A6.5 6.5 0 0 0 20 14.5 Z"; }
+    if root.glyph == "heart" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; fill: root.tint; commands: "M12 20 C4 14.5 3 9.5 6.5 6.8 C9 5 11.2 6 12 8 C12.8 6 15 5 17.5 6.8 C21 9.5 20 14.5 12 20 Z"; }
+
+    // Trazos
+    if root.glyph == "fullscreen" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 9 V4 H9 M15 4 H20 V9 M20 15 V20 H15 M9 20 H4 V15"; }
+    if root.glyph == "shuffle" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M3 7 H7 C12 7 11 17 16 17 H21 M18 14 L21 17 L18 20 M3 17 H7 C9 17 10 15.5 10.7 14 M13.3 10 C14 8.5 15 7 17 7 H21 M18 4 L21 7 L18 10"; }
+    if root.glyph == "repeat" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 11 V9.5 A3.5 3.5 0 0 1 7.5 6 H20 M17 3 L20 6 L17 9 M20 13 V14.5 A3.5 3.5 0 0 1 16.5 18 H4 M7 15 L4 18 L7 21"; }
+    if root.glyph == "subtitles" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M3 5.5 H21 V18.5 H3 Z M6.5 11 H10 M13 11 H17.5 M6.5 14.5 H12 M15 14.5 H17.5"; }
+    if root.glyph == "audio" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 16 V12 A8 8 0 0 1 20 12 V16 M3.5 14 H7.5 V20 H3.5 Z M16.5 14 H20.5 V20 H16.5 Z"; }
+    if root.glyph == "lyrics" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 6 H20 M4 10.5 H20 M4 15 H20 M4 19.5 H13"; }
+    if root.glyph == "expand" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M14 4 H20 V10 M10 20 H4 V14 M20 4 L13 11 M4 20 L11 13"; }
+    if root.glyph == "collapse" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M20 10 H14 V4 M4 14 H10 V20 M14 10 L21 3 M10 14 L3 21"; }
+    if root.glyph == "close" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M6 6 L18 18 M18 6 L6 18"; }
+    if root.glyph == "back" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M20 12 H5 M11 6 L5 12 L11 18"; }
+    if root.glyph == "plus" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M12 5 V19 M5 12 H19"; }
+    if root.glyph == "check" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M5 12.5 L10 17.5 L19 7"; }
+    if root.glyph == "refresh" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M20 12 A8 8 0 1 1 17.5 6.2 M18.5 2.5 V7.5 H13.5"; }
+    if root.glyph == "search" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M10.5 4 A6.5 6.5 0 1 1 10.5 17 A6.5 6.5 0 1 1 10.5 4 Z M15.3 15.3 L20 20"; }
+    if root.glyph == "home" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 11 L12 4 L20 11 V20 H14.5 V14 H9.5 V20 H4 Z"; }
+    if root.glyph == "history" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M12 3.5 A8.5 8.5 0 1 1 12 20.5 A8.5 8.5 0 1 1 12 3.5 Z M12 7.5 V12.5 L15.5 14.5"; }
+    if root.glyph == "heart-outline" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M12 20 C4 14.5 3 9.5 6.5 6.8 C9 5 11.2 6 12 8 C12.8 6 15 5 17.5 6.8 C21 9.5 20 14.5 12 20 Z"; }
+    if root.glyph == "bell" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M6 17 V11 A6 6 0 0 1 18 11 V17 L19.5 18.5 H4.5 Z M10 21 A2 2 0 0 0 14 21"; }
+    if root.glyph == "sliders" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 7 H9 M15 7 H20 M4 17 H13 M19 17 H20 M12 4.5 V9.5 H9 V4.5 Z M16 14.5 V19.5 H13 V14.5 Z"; }
+    if root.glyph == "sun" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M12 8 A4 4 0 1 1 12 16 A4 4 0 1 1 12 8 Z M12 2.5 V4.5 M12 19.5 V21.5 M2.5 12 H4.5 M19.5 12 H21.5 M5.3 5.3 L6.7 6.7 M17.3 17.3 L18.7 18.7 M5.3 18.7 L6.7 17.3 M17.3 6.7 L18.7 5.3"; }
+    if root.glyph == "live" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M12 9.8 A2.2 2.2 0 1 1 12 14.2 A2.2 2.2 0 1 1 12 9.8 Z M7.3 7.3 A6.6 6.6 0 0 0 7.3 16.7 M16.7 7.3 A6.6 6.6 0 0 1 16.7 16.7 M4.2 4.5 A11 11 0 0 0 4.2 19.5 M19.8 4.5 A11 11 0 0 1 19.8 19.5"; }
+    if root.glyph == "movies" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 5 H20 V19 H4 Z M8 5 V19 M16 5 V19 M4 9.5 H8 M4 14.5 H8 M16 9.5 H20 M16 14.5 H20"; }
+    if root.glyph == "series" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M4 16 V5 H15 M8 9 H20 V20 H8 Z"; }
+    if root.glyph == "videos" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M3 6 H21 V18 H3 Z M10 9 L15.5 12 L10 15 Z"; }
+    if root.glyph == "music" : Path { width: root.size; height: root.size; viewbox-width: 24; viewbox-height: 24; stroke: root.tint; stroke-width: 1.8px; commands: "M9 17.5 V5.5 L19 3.5 V15.5 M6 14.8 A3 2.7 0 1 1 6 20.2 A3 2.7 0 1 1 6 14.8 Z M16 12.8 A3 2.7 0 1 1 16 18.2 A3 2.7 0 1 1 16 12.8 Z"; }
+}
+
+// Botón redondo con un ícono. Con `hint` muestra su nombre al pasar el mouse, porque sin texto no se
+// sabría qué hace. `primary` lo pinta de acento; `active` tiñe el ícono (aleatorio prendido, por ejemplo).
+component IconButton inherits Rectangle {
+    in property <string> glyph;
+    in property <string> hint;
+    in property <string> badge;
+    in property <bool> active: false;
+    in property <bool> available: true;
+    in property <bool> primary: false;
+    in property <length> diameter: 36px;
+    callback clicked();
+
+    width: root.diameter;
+    height: root.diameter;
+    border-radius: root.diameter / 2;
+    background: root.primary
+        ? (touch.pressed ? Theme.accent-press : touch.has-hover ? Theme.accent-hover : Theme.accent)
+        : touch.pressed ? Theme.surface-hi
+        : touch.has-hover ? Theme.hover
+        : transparent;
+    opacity: root.available ? 1 : 0.35;
+    animate background { duration: 120ms; }
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        glyph: root.glyph;
+        size: root.primary ? 20px : 18px;
+        tint: root.primary ? #ffffff : root.active ? Theme.accent : Theme.text;
+    }
+
+    if root.badge != "" : Text {
+        x: parent.width - 15px;
+        y: parent.height - 15px;
+        text: root.badge;
+        color: root.active ? Theme.accent : Theme.muted;
+        font-size: 9px;
+        font-weight: 700;
+    }
+
+    // El nombre del botón, arriba de él.
+    if touch.has-hover && root.hint != "" && root.available : Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: -30px;
+        width: hint-text.preferred-width + 16px;
+        height: 24px;
+        border-radius: 6px;
+        background: Theme.surface-hi;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000060;
+
+        hint-text := Text {
+            x: 8px;
+            height: parent.height;
+            text: root.hint;
+            color: Theme.text;
+            font-size: 11px;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.available;
+        mouse-cursor: root.available ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
 // Entrada de la barra lateral. Marca la activa con una franja a la izquierda y se aclara al pasar el mouse.
 component NavButton inherits Rectangle {
     in property <string> label;
+    in property <string> glyph;
     in property <bool> active;
     callback clicked();
 
@@ -106,9 +243,18 @@ component NavButton inherits Rectangle {
         background: root.active ? Theme.accent : transparent;
     }
 
-    Text {
+    Icon {
         x: 14px;
-        width: parent.width - 26px;
+        y: (parent.height - self.height) / 2;
+        glyph: root.glyph;
+        size: 16px;
+        tint: root.active ? Theme.accent : Theme.muted;
+        visible: root.glyph != "";
+    }
+
+    Text {
+        x: root.glyph == "" ? 14px : 40px;
+        width: parent.width - self.x - 12px;
         height: parent.height;
         text: root.label;
         color: root.active ? Theme.text : Theme.muted;
@@ -165,20 +311,17 @@ component CardView inherits Rectangle {
                 Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    width: 64px;
-                    height: 26px;
-                    border-radius: 13px;
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
                     background: Theme.accent;
 
-                    Text {
-                        width: parent.width;
-                        height: parent.height;
-                        text: "Abrir";
-                        color: #ffffff;
-                        font-size: 12px;
-                        font-weight: 600;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    Icon {
+                        x: (parent.width - self.width) / 2 + 1px;
+                        y: (parent.height - self.height) / 2;
+                        glyph: "play";
+                        size: 20px;
+                        tint: #ffffff;
                     }
                 }
             }
@@ -292,14 +435,14 @@ component PlayButton inherits Rectangle {
 
 // Botón grande de la pantalla de un título: ícono y texto. El principal va en el color de acento.
 component HeroButton inherits Rectangle {
-    in property <string> icon;
+    in property <string> glyph;
     in property <string> label;
     in property <bool> primary: false;
     in property <bool> available: true;
     callback clicked();
 
     height: 40px;
-    width: 18px + (root.icon == "" ? 0px : icon-text.preferred-width + 8px) + label-text.preferred-width + 18px;
+    width: 18px + (root.glyph == "" ? 0px : 20px + 8px) + label-text.preferred-width + 18px;
     border-radius: 8px;
     background: !root.available ? Theme.surface-hi
         : root.primary ? (touch.pressed ? Theme.accent-press : touch.has-hover ? Theme.accent-hover : Theme.accent)
@@ -309,18 +452,17 @@ component HeroButton inherits Rectangle {
     opacity: root.available ? 1 : 0.5;
     animate background { duration: 120ms; }
 
-    icon-text := Text {
+    Icon {
         x: 18px;
-        height: parent.height;
-        text: root.icon;
-        color: root.primary ? #ffffff : Theme.text;
-        font-size: 14px;
-        vertical-alignment: center;
-        visible: root.icon != "";
+        y: (parent.height - self.height) / 2;
+        glyph: root.glyph;
+        size: 20px;
+        tint: root.primary ? #ffffff : Theme.text;
+        visible: root.glyph != "";
     }
 
     label-text := Text {
-        x: 18px + (root.icon == "" ? 0px : icon-text.preferred-width + 8px);
+        x: 18px + (root.glyph == "" ? 0px : 20px + 8px);
         height: parent.height;
         text: root.label;
         color: root.primary ? #ffffff : Theme.text;
@@ -392,15 +534,12 @@ component EpisodeRow inherits Rectangle {
                     border-radius: 17px;
                     background: Theme.accent;
 
-                    Text {
-                        x: 2px;
-                        width: parent.width;
-                        height: parent.height;
-                        text: "▶";
-                        color: #ffffff;
-                        font-size: 13px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    Icon {
+                        x: (parent.width - self.width) / 2 + 1px;
+                        y: (parent.height - self.height) / 2;
+                        glyph: "play";
+                        size: 16px;
+                        tint: #ffffff;
                     }
                 }
             }
@@ -452,70 +591,107 @@ component EpisodeRow inherits Rectangle {
     }
 }
 
-// Fila de la pantalla de Ajustes: nombre y nota a la izquierda, valor a la derecha.
+// Fila de la pantalla de Ajustes: nombre y nota a la izquierda; a la derecha, el control (interruptor,
+// valor o botón). La primera de cada grupo lleva el título del grupo arriba.
 component SettingRowView inherits Rectangle {
     in property <SettingRow> data;
     in property <int> index;
     callback clicked(int);
 
-    height: 52px;
-    border-radius: 10px;
-    background: touch.pressed ? Theme.surface-hi : touch.has-hover ? Theme.hover : Theme.surface;
-    animate background { duration: 120ms; }
+    height: (root.data.group == "" ? 0px : 40px) + 56px;
 
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 12px;
+    if root.data.group != "" : Text {
+        y: 14px;
+        x: 4px;
+        text: root.data.group;
+        color: Theme.accent;
+        font-size: 12px;
+        font-weight: 700;
+    }
 
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
+    card := Rectangle {
+        y: root.data.group == "" ? 0px : 40px;
+        height: 56px;
+        border-radius: 10px;
+        background: touch.pressed ? Theme.surface-hi : touch.has-hover ? Theme.hover : Theme.surface;
+        animate background { duration: 120ms; }
 
-            Text {
-                text: root.data.label;
-                color: Theme.text;
-                font-size: 14px;
-                font-weight: 600;
-                wrap: no-wrap;
-                overflow: elide;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 12px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+
+                Text {
+                    text: root.data.label;
+                    color: Theme.text;
+                    font-size: 14px;
+                    font-weight: 600;
+                    wrap: no-wrap;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.data.note;
+                    color: Theme.muted;
+                    font-size: 11px;
+                    wrap: no-wrap;
+                    overflow: elide;
+                }
             }
 
-            Text {
-                text: root.data.note;
-                color: Theme.muted;
-                font-size: 11px;
-                wrap: no-wrap;
-                overflow: elide;
-            }
-        }
+            VerticalLayout {
+                alignment: center;
 
-        Rectangle {
-            width: 150px;
-            height: 32px;
-            border-radius: 8px;
-            background: Theme.surface-hi;
+                // Interruptor
+                if root.data.switch : Rectangle {
+                    width: 44px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: root.data.on ? Theme.accent : Theme.surface-hi;
+                    animate background { duration: 150ms; }
 
-            Text {
-                x: 8px;
-                width: parent.width - 16px;
-                height: parent.height;
-                text: root.data.value;
-                color: Theme.text;
-                font-size: 13px;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                wrap: no-wrap;
-                overflow: elide;
+                    Rectangle {
+                        x: root.data.on ? parent.width - self.width - 3px : 3px;
+                        y: 3px;
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 9px;
+                        background: root.data.on ? #ffffff : Theme.muted;
+                        animate x { duration: 150ms; easing: ease-out; }
+                    }
+                }
+
+                // Valor que cambia con cada clic, o botón de acción
+                if !root.data.switch : Rectangle {
+                    width: max(110px, value-text.preferred-width + 28px);
+                    height: 32px;
+                    border-radius: 16px;
+                    background: root.data.action ? Theme.accent : Theme.surface-hi;
+
+                    value-text := Text {
+                        x: 14px;
+                        height: parent.height;
+                        text: root.data.value;
+                        color: root.data.action ? #ffffff : Theme.text;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        wrap: no-wrap;
+                    }
+                }
             }
         }
     }
 
     touch := TouchArea {
+        y: card.y;
         width: parent.width;
-        height: parent.height;
+        height: card.height;
         mouse-cursor: pointer;
         clicked => { root.clicked(root.index); }
     }
@@ -566,7 +742,7 @@ export component AppWindow inherits Window {
 
     in property <[string]> platforms;
     in property <int> platform-index: 0;
-    in property <[string]> sections;
+    in property <[SectionEntry]> sections;
     in property <int> section-index: 1;
     in property <[RowData]> rows;
     in property <int> columns: 4;
@@ -591,7 +767,12 @@ export component AppWindow inherits Window {
     in property <[LyricRow]> lyrics-rows;
     // Aleatorio y repetir, y su texto.
     in property <bool> shuffle-on;
-    in property <string> repeat-label: "Repetir: no";
+    // 0: no repite, 1: la lista, 2: una.
+    in property <int> repeat-mode: 0;
+    // Hay una lista de dónde seguir (aleatorio y repetir tienen sentido).
+    in property <bool> queue-controls: false;
+    // Lo que suena es música: sin calidad, idioma ni subtítulos.
+    in property <bool> audio-only: false;
     // Calidad que se está viendo ("480p"), para el botón de la barra.
     in property <string> quality-label: "480p";
     in property <string> play-title;
@@ -650,7 +831,19 @@ export component AppWindow inherits Window {
     callback theme-toggled();
     callback width-changed(float);
 
-    property <length> card-width: (root.width - 200px - 40px - (root.columns - 1) * 16px) / root.columns;
+    // La letra se puede ocultar con el botón de la barra, y ocupar todo el contenido para verla sola.
+    property <bool> lyrics-visible: true;
+    property <bool> lyrics-wide: false;
+    property <bool> lyrics-shown: root.lyrics-open && root.lyrics-visible;
+    // Una columna a la derecha (chat, guía o letra): la grilla le deja su lugar y no queda tapada.
+    property <bool> side-panel: root.chat-open || root.guide-open || (root.lyrics-shown && !root.lyrics-wide);
+    property <length> content-width: root.width - (root.side-panel ? 328px : 0px);
+    // Cuánto mide el pie ocupado por la barra del reproductor (si está), para que los paneles no la tapen.
+    property <length> panel-bottom: root.playing ? 144px : 20px;
+    property <length> card-width: (root.content-width - 200px - 40px - (root.columns - 1) * 16px) / root.columns;
+
+    // Cuántas columnas entran se decide en Rust, con el ancho que le queda a la grilla.
+    changed content-width => { root.width-changed(root.content-width / 1px); }
     // Lugares del esqueleto: uno por columna. Lo fija Rust (ver `state::sync_skeleton`).
     in property <[int]> skeleton-slots;
     // Alterna cada 700 ms mientras algo carga o se está bufferizando: mueve la barra y pulsa los esqueletos.
@@ -665,123 +858,9 @@ export component AppWindow inherits Window {
 
     forward-focus: keys;
 
-    // Guía de programación: lo que está al aire y lo que sigue, con sus horas.
-    if root.guide-open : Rectangle {
-        x: root.width - 328px;
-        y: 12px;
-        width: 312px;
-        height: root.height - 136px;
-        background: Theme.surface;
-        border-radius: 12px;
-        clip: true;
-
-        VerticalLayout {
-            padding: 12px;
-            spacing: 8px;
-
-            Text {
-                text: "Programación";
-                color: Theme.muted;
-                font-size: 12px;
-                font-weight: 600;
-            }
-
-            for row in root.guide-rows : HorizontalLayout {
-                spacing: 8px;
-
-                Text {
-                    text: row.time;
-                    color: row.current ? Theme.accent : Theme.muted;
-                    font-size: 12px;
-                    font-weight: row.current ? 600 : 400;
-                    vertical-alignment: top;
-                    min-width: 40px;
-                }
-
-                Text {
-                    text: row.title;
-                    color: row.current ? Theme.accent : Theme.text;
-                    font-size: 13px;
-                    font-weight: row.current ? 600 : 400;
-                    wrap: word-wrap;
-                    horizontal-stretch: 1;
-                }
-            }
-        }
-    }
-
-    // Letra de la canción que suena: en el mismo lugar que el chat (no se ven a la vez).
-    if root.lyrics-open : Rectangle {
-        x: root.width - 328px;
-        y: 12px;
-        width: 312px;
-        height: root.height - 136px;
-        background: Theme.surface;
-        border-radius: 12px;
-        clip: true;
-
-        VerticalLayout {
-            padding: 14px;
-            spacing: 10px;
-            alignment: center;
-
-            for row in root.lyrics-rows : Text {
-                text: row.text;
-                color: row.current ? Theme.accent : Theme.muted;
-                font-size: row.current ? 16px : 13px;
-                font-weight: row.current ? 600 : 400;
-                horizontal-alignment: center;
-                wrap: word-wrap;
-            }
-        }
-    }
-
-    // Chat: columna superpuesta a la derecha, por encima de la barra del reproductor. Se muestran
-    // las últimas líneas, pegadas abajo.
-    if root.chat-open : Rectangle {
-        x: root.width - 328px;
-        y: 12px;
-        width: 312px;
-        height: root.height - 136px;
-        background: Theme.surface;
-        border-radius: 12px;
-        clip: true;
-
-        VerticalLayout {
-            padding: 10px;
-            spacing: 6px;
-            alignment: end;
-
-            for line in root.chat-lines : HorizontalLayout {
-                spacing: 6px;
-
-                Text {
-                    text: line.author;
-                    color: line.color;
-                    font-size: 12px;
-                    font-weight: 600;
-                    vertical-alignment: top;
-                    wrap: no-wrap;
-                    overflow: elide;
-                    max-width: 110px;
-                }
-
-                Text {
-                    text: line.text;
-                    color: line.notice ? Theme.accent : Theme.text;
-                    font-size: 12px;
-                    wrap: word-wrap;
-                    horizontal-stretch: 1;
-                }
-            }
-        }
-    }
-
     keys := FocusScope {
         width: parent.width;
         height: parent.height;
-
-        changed width => { root.width-changed(self.width / 1px); }
 
         key-pressed(event) => {
             if (event.text == "/") {
@@ -864,7 +943,7 @@ export component AppWindow inherits Window {
                                 clicked => { root.platform-clicked(i); }
                             }
 
-                            Text {
+                            if root.sections.length > 0 : Text {
                                 text: "SECCIONES";
                                 color: Theme.muted;
                                 font-size: 11px;
@@ -872,10 +951,15 @@ export component AppWindow inherits Window {
                                 vertical-alignment: bottom;
                             }
 
-                            for name[i] in root.sections : NavButton {
-                                label: name;
-                                active: i == root.section-index;
-                                clicked => { root.section-clicked(i); }
+                            for entry in root.sections : NavButton {
+                                label: entry.label;
+                                glyph: entry.index == 0 ? "live"
+                                    : entry.index == 1 ? "movies"
+                                    : entry.index == 2 ? "series"
+                                    : entry.index == 3 ? "videos"
+                                    : "music";
+                                active: entry.index == root.section-index;
+                                clicked => { root.section-clicked(entry.index); }
                             }
 
                             Text {
@@ -888,24 +972,28 @@ export component AppWindow inherits Window {
 
                             NavButton {
                                 label: "Inicio";
+                                glyph: "home";
                                 active: root.library-index == 0;
                                 clicked => { root.library-clicked(0); }
                             }
 
                             NavButton {
                                 label: "Historial";
+                                glyph: "history";
                                 active: root.library-index == 1;
                                 clicked => { root.library-clicked(1); }
                             }
 
                             NavButton {
                                 label: "Favoritos";
+                                glyph: "heart-outline";
                                 active: root.library-index == 2;
                                 clicked => { root.library-clicked(2); }
                             }
 
                             NavButton {
                                 label: "Siguiendo";
+                                glyph: "bell";
                                 active: root.library-index == 3;
                                 clicked => { root.library-clicked(3); }
                             }
@@ -919,12 +1007,14 @@ export component AppWindow inherits Window {
 
                     NavButton {
                         label: "Ajustes";
+                        glyph: "sliders";
                         active: root.settings-open;
                         clicked => { root.settings-requested(); }
                     }
 
                     NavButton {
                         label: Theme.dark ? "Tema claro" : "Tema oscuro";
+                        glyph: Theme.dark ? "sun" : "moon";
                         active: false;
                         clicked => { root.theme-toggled(); }
                     }
@@ -933,7 +1023,16 @@ export component AppWindow inherits Window {
 
             // Contenido
             VerticalLayout {
-                padding: 20px;
+                padding-left: 20px;
+                padding-top: 20px;
+                padding-bottom: 20px;
+                padding-right: 20px;
+                spacing: 8px;
+
+                // Todo lo de arriba deja lugar a la columna de la derecha; la barra del reproductor, no.
+                VerticalLayout {
+                vertical-stretch: 1;
+                padding-right: root.side-panel ? 328px : 0px;
                 spacing: 8px;
 
                 HorizontalLayout {
@@ -947,9 +1046,17 @@ export component AppWindow inherits Window {
                         border-width: search.has-focus ? 1px : 0px;
                         border-color: Theme.accent;
 
+                        Icon {
+                            x: 12px;
+                            y: (parent.height - self.height) / 2;
+                            glyph: "search";
+                            size: 16px;
+                            tint: Theme.muted;
+                        }
+
                         Text {
-                            x: 14px;
-                            width: parent.width - 28px;
+                            x: 38px;
+                            width: parent.width - 52px;
                             height: parent.height;
                             text: "Buscar…   (tecla /)";
                             color: Theme.muted;
@@ -959,8 +1066,8 @@ export component AppWindow inherits Window {
                         }
 
                         search := TextInput {
-                            x: 14px;
-                            width: parent.width - 28px;
+                            x: 38px;
+                            width: parent.width - 52px;
                             height: parent.height;
                             color: Theme.text;
                             font-size: 14px;
@@ -975,12 +1082,11 @@ export component AppWindow inherits Window {
                         border-radius: 8px;
                         animate background { duration: 120ms; }
 
-                        Text {
-                            text: "⟳";
-                            color: Theme.text;
-                            font-size: 18px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            glyph: "refresh";
+                            size: 18px;
                         }
 
                         refresh-touch := TouchArea {
@@ -1111,25 +1217,40 @@ export component AppWindow inherits Window {
                     if root.settings-open : VerticalLayout {
                         width: parent.width;
                         height: parent.height;
-                        spacing: 8px;
+                        spacing: 4px;
 
                         HorizontalLayout {
-                            alignment: start;
+                            height: 44px;
+                            spacing: 8px;
 
-                            PlayButton {
-                                label: "← Volver";
-                                width: 120px;
+                            IconButton {
+                                glyph: "back";
+                                hint: "Volver";
                                 clicked => { root.back-requested(); }
+                            }
+
+                            Text {
+                                text: "Ajustes";
+                                color: Theme.text;
+                                font-size: 22px;
+                                font-weight: 700;
+                                vertical-alignment: center;
                             }
                         }
 
-                        ListView {
+                        ScrollView {
                             vertical-stretch: 1;
 
-                            for row[i] in root.settings-rows : SettingRowView {
-                                data: row;
-                                index: i;
-                                clicked(index) => { root.setting-clicked(index); }
+                            VerticalLayout {
+                                padding-right: 12px;
+                                padding-bottom: 16px;
+                                spacing: 6px;
+
+                                for row[i] in root.settings-rows : SettingRowView {
+                                    data: row;
+                                    index: i;
+                                    clicked(index) => { root.setting-clicked(index); }
+                                }
                             }
                         }
                     }
@@ -1205,14 +1326,12 @@ export component AppWindow inherits Window {
                                         background: back-touch.pressed ? #000000d0 : back-touch.has-hover ? #000000a8 : #00000080;
                                         animate background { duration: 120ms; }
 
-                                        Text {
-                                            width: parent.width;
-                                            height: parent.height;
-                                            text: "←";
-                                            color: #ffffff;
-                                            font-size: 18px;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
+                                        Icon {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            glyph: "back";
+                                            size: 18px;
+                                            tint: #ffffff;
                                         }
 
                                         back-touch := TouchArea {
@@ -1250,7 +1369,7 @@ export component AppWindow inherits Window {
                                             alignment: start;
 
                                             HeroButton {
-                                                icon: "▶";
+                                                glyph: "play";
                                                 label: root.activity == Activity.preparing ? "Preparando…" : root.detail-play-label;
                                                 primary: true;
                                                 available: root.activity != Activity.preparing;
@@ -1258,7 +1377,7 @@ export component AppWindow inherits Window {
                                             }
 
                                             HeroButton {
-                                                icon: root.detail-favorite ? "✓" : "+";
+                                                glyph: root.detail-favorite ? "check" : "plus";
                                                 label: root.favorite-label;
                                                 clicked => { root.favorite-requested(); }
                                             }
@@ -1317,6 +1436,8 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                }
+
                 // Barra del reproductor (mpv corre en su propia ventana; esto controla mpv).
                 if root.playing : Rectangle {
                     height: 108px;
@@ -1324,16 +1445,19 @@ export component AppWindow inherits Window {
                     border-radius: 12px;
 
                     VerticalLayout {
-                        padding: 10px;
-                        spacing: 8px;
+                        padding-top: 10px;
+                        padding-bottom: 10px;
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 6px;
 
                         HorizontalLayout {
                             spacing: 8px;
+                            height: 18px;
 
                             // Punto que pulsa mientras el buffer se llena (centrado con el título).
                             Rectangle {
                                 width: 8px;
-                                height: 18px;
 
                                 Rectangle {
                                     y: 5px;
@@ -1352,6 +1476,7 @@ export component AppWindow inherits Window {
                                 color: Theme.text;
                                 font-size: 13px;
                                 font-weight: 600;
+                                vertical-alignment: center;
                                 wrap: no-wrap;
                                 overflow: elide;
                             }
@@ -1360,26 +1485,8 @@ export component AppWindow inherits Window {
                                 text: root.play-status + "   " + root.play-time;
                                 color: root.play-buffering ? Theme.accent : Theme.muted;
                                 font-size: 12px;
+                                vertical-alignment: center;
                                 wrap: no-wrap;
-                            }
-
-                            // Volumen y calidad, a la derecha de la barra de estado.
-                            PlayButton {
-                                label: "Vol −";
-                                width: 60px;
-                                clicked => { root.volume-requested(-10); }
-                            }
-
-                            PlayButton {
-                                label: "Vol +";
-                                width: 60px;
-                                clicked => { root.volume-requested(10); }
-                            }
-
-                            PlayButton {
-                                label: root.quality-label;
-                                width: 64px;
-                                clicked => { root.quality-requested(); }
                             }
                         }
 
@@ -1412,79 +1519,318 @@ export component AppWindow inherits Window {
                             }
                         }
 
+                        // Tres grupos: volumen y calidad a la izquierda, el transporte al centro, y a la
+                        // derecha lo que cambia la imagen o el sonido.
                         HorizontalLayout {
-                            spacing: 6px;
+                            spacing: 8px;
 
-                            PlayButton {
-                                label: root.play-paused ? "Seguir" : "Pausa";
-                                primary: true;
-                                horizontal-stretch: 2;
-                                clicked => { root.toggle-pause-requested(); }
+                            HorizontalLayout {
+                                horizontal-stretch: 1;
+                                alignment: start;
+                                spacing: 2px;
+
+                                IconButton {
+                                    glyph: "volume-down";
+                                    hint: "Bajar volumen";
+                                    clicked => { root.volume-requested(-10); }
+                                }
+
+                                IconButton {
+                                    glyph: "volume-up";
+                                    hint: "Subir volumen";
+                                    clicked => { root.volume-requested(10); }
+                                }
+
+                                if !root.audio-only : Rectangle {
+                                    width: quality-text.preferred-width + 20px;
+                                    height: 28px;
+                                    y: 4px;
+                                    border-radius: 14px;
+                                    background: quality-touch.pressed ? Theme.surface-hi
+                                        : quality-touch.has-hover ? Theme.hover
+                                        : transparent;
+                                    border-width: 1px;
+                                    border-color: Theme.surface-hi;
+                                    animate background { duration: 120ms; }
+
+                                    quality-text := Text {
+                                        x: 10px;
+                                        height: parent.height;
+                                        text: root.quality-label;
+                                        color: Theme.text;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                        wrap: no-wrap;
+                                    }
+
+                                    quality-touch := TouchArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        mouse-cursor: pointer;
+                                        clicked => { root.quality-requested(); }
+                                    }
+                                }
                             }
 
-                            PlayButton {
-                                label: "−10 s";
-                                horizontal-stretch: 1;
-                                clicked => { root.seek-requested(-10); }
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 4px;
+
+                                if root.queue-controls : IconButton {
+                                    glyph: "shuffle";
+                                    hint: root.shuffle-on ? "Aleatorio: sí" : "Aleatorio: no";
+                                    active: root.shuffle-on;
+                                    clicked => { root.shuffle-requested(); }
+                                }
+
+                                IconButton {
+                                    glyph: "prev";
+                                    hint: "Anterior";
+                                    available: root.can-step-prev;
+                                    clicked => { root.prev-requested(); }
+                                }
+
+                                IconButton {
+                                    glyph: "rewind";
+                                    badge: "10";
+                                    hint: "Retroceder 10 s";
+                                    clicked => { root.seek-requested(-10); }
+                                }
+
+                                IconButton {
+                                    glyph: root.play-paused ? "play" : "pause";
+                                    hint: root.play-paused ? "Seguir" : "Pausa";
+                                    primary: true;
+                                    diameter: 44px;
+                                    clicked => { root.toggle-pause-requested(); }
+                                }
+
+                                IconButton {
+                                    glyph: "forward";
+                                    badge: "10";
+                                    hint: "Adelantar 10 s";
+                                    clicked => { root.seek-requested(10); }
+                                }
+
+                                IconButton {
+                                    glyph: "next";
+                                    hint: "Siguiente";
+                                    available: root.can-step-next;
+                                    clicked => { root.next-requested(); }
+                                }
+
+                                if root.queue-controls : IconButton {
+                                    glyph: "repeat";
+                                    badge: root.repeat-mode == 2 ? "1" : "";
+                                    hint: root.repeat-mode == 0 ? "Repetir: no" : root.repeat-mode == 1 ? "Repetir: todo" : "Repetir: una";
+                                    active: root.repeat-mode != 0;
+                                    clicked => { root.repeat-requested(); }
+                                }
                             }
 
-                            PlayButton {
-                                label: "+10 s";
+                            HorizontalLayout {
                                 horizontal-stretch: 1;
-                                clicked => { root.seek-requested(10); }
-                            }
+                                alignment: end;
+                                spacing: 2px;
 
-                            PlayButton {
-                                label: "Anterior";
-                                horizontal-stretch: 1;
-                                available: root.can-step-prev;
-                                clicked => { root.prev-requested(); }
-                            }
+                                if !root.audio-only : IconButton {
+                                    glyph: "audio";
+                                    hint: "Idioma del audio";
+                                    clicked => { root.audio-cycle-requested(); }
+                                }
 
-                            PlayButton {
-                                label: "Siguiente";
-                                horizontal-stretch: 1;
-                                available: root.can-step-next;
-                                clicked => { root.next-requested(); }
-                            }
+                                if !root.audio-only : IconButton {
+                                    glyph: "subtitles";
+                                    hint: "Subtítulos";
+                                    clicked => { root.subtitle-cycle-requested(); }
+                                }
 
-                            PlayButton {
-                                label: "Idioma";
-                                horizontal-stretch: 1;
-                                clicked => { root.audio-cycle-requested(); }
-                            }
+                                if root.lyrics-open : IconButton {
+                                    glyph: "lyrics";
+                                    hint: root.lyrics-visible ? "Ocultar letra" : "Ver letra";
+                                    active: root.lyrics-visible;
+                                    clicked => {
+                                        root.lyrics-visible = !root.lyrics-visible;
+                                        if (!root.lyrics-visible) { root.lyrics-wide = false; }
+                                    }
+                                }
 
-                            PlayButton {
-                                label: "Subs";
-                                horizontal-stretch: 1;
-                                clicked => { root.subtitle-cycle-requested(); }
-                            }
+                                IconButton {
+                                    glyph: "fullscreen";
+                                    hint: "Pantalla completa";
+                                    clicked => { root.fullscreen-requested(); }
+                                }
 
-                            PlayButton {
-                                label: "Completa";
-                                horizontal-stretch: 1;
-                                clicked => { root.fullscreen-requested(); }
-                            }
-
-                            PlayButton {
-                                label: root.shuffle-on ? "Aleatorio ✓" : "Aleatorio";
-                                horizontal-stretch: 1;
-                                clicked => { root.shuffle-requested(); }
-                            }
-
-                            PlayButton {
-                                label: root.repeat-label;
-                                horizontal-stretch: 1;
-                                clicked => { root.repeat-requested(); }
-                            }
-
-                            PlayButton {
-                                label: "Detener";
-                                horizontal-stretch: 1;
-                                clicked => { root.stop-requested(); }
+                                IconButton {
+                                    glyph: "stop";
+                                    hint: "Detener";
+                                    clicked => { root.stop-requested(); }
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Paneles de la derecha. Van después del contenido para dibujarse encima: antes quedaban debajo
+    // y las portadas tapaban el texto.
+
+    // Guía de programación: lo que está al aire y lo que sigue, con sus horas.
+    if root.guide-open : Rectangle {
+        x: root.width - 332px;
+        y: 20px;
+        width: 312px;
+        height: root.height - 20px - root.panel-bottom;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 8px;
+            alignment: start;
+
+            Text {
+                text: "Programación";
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 700;
+                height: 24px;
+            }
+
+            for row in root.guide-rows : HorizontalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: row.time;
+                    color: row.current ? Theme.accent : Theme.muted;
+                    font-size: 12px;
+                    font-weight: row.current ? 600 : 400;
+                    vertical-alignment: top;
+                    min-width: 40px;
+                }
+
+                Text {
+                    text: row.title;
+                    color: row.current ? Theme.accent : Theme.text;
+                    font-size: 13px;
+                    font-weight: row.current ? 600 : 400;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+    }
+
+    // Letra de la canción que suena. En su columna, o (con el botón de expandir) ocupando todo el
+    // contenido, para leerla sin nada más detrás.
+    if root.lyrics-shown : Rectangle {
+        x: root.lyrics-wide ? 220px : root.width - 332px;
+        y: 20px;
+        width: root.lyrics-wide ? root.width - 260px : 312px;
+        height: root.height - 20px - root.panel-bottom;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            HorizontalLayout {
+                height: 32px;
+                spacing: 4px;
+
+                Icon {
+                    y: 7px;
+                    glyph: "lyrics";
+                    size: 18px;
+                    tint: Theme.accent;
+                }
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Letra";
+                    color: Theme.text;
+                    font-size: 14px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                IconButton {
+                    glyph: root.lyrics-wide ? "collapse" : "expand";
+                    hint: root.lyrics-wide ? "Achicar" : "Ver sola";
+                    diameter: 32px;
+                    clicked => { root.lyrics-wide = !root.lyrics-wide; }
+                }
+
+                IconButton {
+                    glyph: "close";
+                    hint: "Ocultar letra";
+                    diameter: 32px;
+                    clicked => {
+                        root.lyrics-visible = false;
+                        root.lyrics-wide = false;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                spacing: root.lyrics-wide ? 14px : 10px;
+
+                for row in root.lyrics-rows : Text {
+                    text: row.text;
+                    color: row.current ? Theme.accent : Theme.muted;
+                    font-size: root.lyrics-wide ? (row.current ? 26px : 18px) : (row.current ? 16px : 13px);
+                    font-weight: row.current ? 600 : 400;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+
+    // Chat: columna a la derecha, por encima de la barra del reproductor. Se muestran las últimas
+    // líneas, pegadas abajo.
+    if root.chat-open : Rectangle {
+        x: root.width - 332px;
+        y: 20px;
+        width: 312px;
+        height: root.height - 20px - root.panel-bottom;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 6px;
+            alignment: end;
+
+            for line in root.chat-lines : HorizontalLayout {
+                spacing: 6px;
+
+                Text {
+                    text: line.author;
+                    color: line.color;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: top;
+                    wrap: no-wrap;
+                    overflow: elide;
+                    max-width: 110px;
+                }
+
+                Text {
+                    text: line.text;
+                    color: line.notice ? Theme.accent : Theme.text;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
                 }
             }
         }

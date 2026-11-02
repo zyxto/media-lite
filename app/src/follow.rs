@@ -7,7 +7,7 @@ use std::sync::Arc;
 use media_lite_core::{Item, Kind, Platform};
 
 use crate::library::{self, Shelf};
-use crate::state::{self, with_app, App};
+use crate::state::{with_app, App};
 
 /// Cuántos canales se guardan.
 const MAX_FOLLOWING: usize = 200;
@@ -100,7 +100,6 @@ fn deliver(app: &Rc<App>, platform: Platform, items: Vec<Item>) {
     if on_following {
         library::show(app, Shelf::Following);
     }
-    state::sync_nav(app);
 }
 
 /// Lo que se muestra en «Siguiendo»: primero lo que hay en vivo o es nuevo, después los canales.

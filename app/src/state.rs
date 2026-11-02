@@ -15,7 +15,7 @@ use media_lite_providers::Provider;
 use slint::{Image, ModelRc, SharedString, VecModel, Weak};
 
 use crate::playback::Playback;
-use crate::{Activity, AppWindow, CardData, EpisodeData, RowData};
+use crate::{Activity, AppWindow, CardData, EpisodeData, RowData, SectionEntry};
 
 /// Ancho mínimo de una tarjeta; define cuántas columnas caben (la misma cuenta que en Slint).
 pub const CARD_MIN_WIDTH: f32 = 240.0;
@@ -260,11 +260,46 @@ pub fn set_activity(app: &App, activity: Activity) {
     }
 }
 
-/// Marca en el menú la plataforma y la sección de la navegación actual. Así la marca sigue al
-/// clic también al volver de la biblioteca, que desmarca ambas.
-pub fn sync_nav(app: &App) {
-    let (platform, section) = {
+/// Secciones que tiene la plataforma elegida (índices de `Section::ALL`). «Todas las plataformas»
+/// muestra las que tenga alguna.
+pub fn offered_sections(app: &App) -> Vec<usize> {
+    let (global, platform) = {
         let nav = app.nav.borrow();
+        (nav.global, nav.platform)
+    };
+    Section::ALL
+        .iter()
+        .enumerate()
+        .filter(|(_, section)| {
+            if global {
+                app.providers.iter().any(|p| p.caps().offers(**section))
+            } else {
+                app.providers
+                    .get(platform)
+                    .is_some_and(|p| p.caps().offers(**section))
+            }
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// La sección que queda al cambiar de plataforma: la actual si la tiene; si no, la primera que ofrece.
+fn section_for(offered: &[usize], current: usize) -> usize {
+    if offered.contains(&current) {
+        current
+    } else {
+        offered.first().copied().unwrap_or(current)
+    }
+}
+
+/// Marca en el menú la plataforma y la sección de la navegación actual, y deja en la barra solo las
+/// secciones que esa plataforma tiene. Así la marca sigue al clic también al volver de la biblioteca,
+/// que desmarca ambas.
+pub fn sync_nav(app: &App) {
+    let offered = offered_sections(app);
+    let (platform, section) = {
+        let mut nav = app.nav.borrow_mut();
+        nav.section = section_for(&offered, nav.section);
         // «Todas las plataformas» es la última entrada del menú (ver `main.rs`).
         let platform = if nav.global {
             app.providers.len()
@@ -274,6 +309,16 @@ pub fn sync_nav(app: &App) {
         (platform, nav.section)
     };
     if let Some(w) = app.weak.upgrade() {
+        // Con una sola sección no hay nada que elegir: la plataforma ya dice qué es.
+        let entries: Vec<SectionEntry> = offered
+            .iter()
+            .filter(|_| offered.len() > 1)
+            .map(|&i| SectionEntry {
+                label: SharedString::from(Section::ALL[i].label()),
+                index: i as i32,
+            })
+            .collect();
+        w.set_sections(ModelRc::new(VecModel::from(entries)));
         w.set_platform_index(platform as i32);
         w.set_section_index(section as i32);
     }
@@ -288,18 +333,18 @@ pub fn sync_chips(app: &App) {
     }
 }
 
-/// Nombres para el menú de secciones, para inicializar la ventana.
-pub fn section_labels() -> ModelRc<SharedString> {
-    let names: Vec<SharedString> = Section::ALL
-        .iter()
-        .map(|s| SharedString::from(s.label()))
-        .collect();
-    ModelRc::new(VecModel::from(names))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn section_stays_when_offered_and_falls_back_to_the_first() {
+        // Twitch: solo «En vivo» (índice 0). Pluto: en vivo, películas y series (0, 1, 2).
+        assert_eq!(section_for(&[0], 1), 0);
+        assert_eq!(section_for(&[0, 1, 2], 2), 2);
+        assert_eq!(section_for(&[4], 0), 4);
+        assert_eq!(section_for(&[], 3), 3);
+    }
 
     #[test]
     fn same_text_ignores_line_breaks_and_extra_spaces() {

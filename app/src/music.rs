@@ -13,7 +13,7 @@ use crate::state::{set_status, with_app, App};
 use crate::LyricRow;
 
 /// Líneas de la letra que se ven a la vez (la que suena y sus vecinas).
-const WINDOW: usize = 9;
+const WINDOW: usize = 11;
 
 /// Qué se repite al terminar la cola.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -32,6 +32,15 @@ impl Repeat {
             Repeat::Off => Repeat::All,
             Repeat::All => Repeat::One,
             Repeat::One => Repeat::Off,
+        }
+    }
+
+    /// 0: no, 1: todo, 2: una. Es lo que usa el ícono de la barra.
+    pub fn index(self) -> i32 {
+        match self {
+            Repeat::Off => 0,
+            Repeat::All => 1,
+            Repeat::One => 2,
         }
     }
 

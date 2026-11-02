@@ -930,7 +930,11 @@ pub fn sync_ui(app: &Rc<App>) {
             window.set_can_step_prev(neighbor(&pb.queue, pb.queue_index, -1).is_some());
             let modes = crate::music::modes();
             window.set_shuffle_on(modes.shuffle);
-            window.set_repeat_label(modes.repeat.label().into());
+            window.set_repeat_mode(modes.repeat.index());
+            // Aleatorio y repetir solo tienen sentido con una lista de dónde seguir.
+            window.set_queue_controls(pb.queue.len() > 1);
+            // La música no tiene calidad, idioma ni subtítulos.
+            window.set_audio_only(pb.item.kind == media_lite_core::Kind::Track);
             let can_next = {
                 let neighbor = |from: usize, d: i64| neighbor(&pb.queue, from, d);
                 crate::music::next_index(&pb.queue, pb.queue_index, modes, &neighbor).is_some()

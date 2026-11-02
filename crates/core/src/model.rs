@@ -265,3 +265,16 @@ pub struct Caps {
     pub chat: bool,
     pub login: bool,
 }
+
+impl Caps {
+    /// ¿La plataforma tiene esta sección?
+    pub fn offers(&self, section: Section) -> bool {
+        match section {
+            Section::Live => self.live,
+            Section::Movies => self.movies,
+            Section::Series => self.series,
+            Section::Videos => self.videos,
+            Section::Music => self.music,
+        }
+    }
+}

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use media_lite_core::thumbs::Thumb;
-use media_lite_core::{Caps, Category, Item, Kind, Page, Season, Section};
+use media_lite_core::{Category, Item, Kind, Page, Season, Section};
 use media_lite_providers::Provider;
 use slint::{ComponentHandle, Image, Model, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
@@ -144,7 +144,7 @@ pub fn global_section(app: &Rc<App>, section: Section) {
     let providers: Vec<Arc<dyn Provider>> = app
         .providers
         .iter()
-        .filter(|p| offers(&p.caps(), section))
+        .filter(|p| p.caps().offers(section))
         .cloned()
         .collect();
     let generation = app.generation.next();
@@ -183,17 +183,6 @@ pub fn global_section(app: &Rc<App>, section: Section) {
                 });
             });
         });
-    }
-}
-
-/// ¿La plataforma ofrece esta sección?
-fn offers(caps: &Caps, section: Section) -> bool {
-    match section {
-        Section::Live => caps.live,
-        Section::Movies => caps.movies,
-        Section::Series => caps.series,
-        Section::Videos => caps.videos,
-        Section::Music => caps.music,
     }
 }
 
