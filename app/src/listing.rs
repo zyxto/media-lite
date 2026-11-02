@@ -7,10 +7,13 @@ use media_lite_core::thumbs::Thumb;
 use media_lite_core::{Category, Item, Kind, Season, Section};
 use slint::{ComponentHandle, Image, Model, Rgba8Pixel, SharedPixelBuffer, SharedString};
 
+use crate::detail;
 use crate::state::{self, set_status, sync_chips, with_app, App, Grid, SeriesView};
 
 /// Pide el listado (o la búsqueda) de la navegación actual, y sus categorías.
 pub fn load(app: &Rc<App>) {
+    // Cargar un listado (plataforma, sección, búsqueda, categoría, F5) saca de Ajustes.
+    crate::settings::close(app);
     let shelf = app.nav.borrow().library;
     if let Some(shelf) = shelf {
         crate::library::show(app, shelf);
@@ -198,6 +201,8 @@ fn clear_grid(app: &App) {
     state::sync_skeleton(app);
     if let Some(w) = app.weak.upgrade() {
         w.set_empty_message(SharedString::new());
+        // Mientras carga se ve el esqueleto, no el título que había abierto.
+        detail::hide(&w);
     }
 }
 
@@ -230,7 +235,7 @@ pub fn show_listing(
     sync_chips(app);
     if let Some(w) = app.weak.upgrade() {
         w.set_empty_message(empty_message.into());
-        w.set_detail_open(false);
+        detail::hide(&w);
     }
     set_status(app, status);
     visible_now(app);
@@ -245,6 +250,9 @@ pub fn show_listing(
             Ok("home") => crate::library::open(app, crate::library::Shelf::Home),
             Ok("history") => crate::library::open(app, crate::library::Shelf::History),
             Ok("favorites") => crate::library::open(app, crate::library::Shelf::Favorites),
+            // Abre la pantalla del primer título (o de la primera serie) del listado.
+            Ok("detail") => open_first(app, false),
+            Ok("series") => open_first(app, true),
             _ => {}
         }
     }
@@ -253,6 +261,27 @@ pub fn show_listing(
         if let Some(item) = first {
             crate::playback::request(app, item, Vec::new());
         }
+    }
+}
+
+/// Gancho de desarrollo: abre el primer elemento que es una serie (o que no lo es).
+/// MEDIA_LITE_PICK=n salta los primeros n.
+fn open_first(app: &Rc<App>, series: bool) {
+    let skip = std::env::var("MEDIA_LITE_PICK")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    let index = app
+        .grid
+        .borrow()
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| (item.kind == Kind::Series) == series)
+        .nth(skip)
+        .map(|(i, _)| i);
+    if let Some(index) = index {
+        card_clicked(app, index);
     }
 }
 
@@ -267,60 +296,35 @@ pub fn deliver_thumb(app: &App, generation: u64, index: usize, thumb: Thumb) {
     let row = index / grid.columns;
     let data = grid.row(row);
     grid.rows.set_row_data(row, data);
+    if grid.series.is_some() {
+        let episode = grid.episode(index);
+        grid.episodes.set_row_data(index, episode);
+    }
 }
 
-fn image_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Image {
+pub fn image_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Image {
     let mut buffer = SharedPixelBuffer::<Rgba8Pixel>::new(width, height);
     buffer.make_mut_bytes().copy_from_slice(rgba);
     Image::from_rgba8(buffer)
 }
 
-/// Un clic en una tarjeta: una serie abre sus temporadas; el resto, el detalle.
+/// Un clic en una tarjeta: una serie abre sus temporadas; el resto, su pantalla.
 pub fn card_clicked(app: &Rc<App>, index: usize) {
     let item = app.grid.borrow().items.get(index).cloned();
     let Some(item) = item else {
         return;
     };
     if item.kind == Kind::Series {
-        open_series(app, item);
+        let placeholder = app.grid.borrow().images.get(index).cloned().flatten();
+        open_series(app, item, placeholder);
     } else {
-        show_detail(app, index);
+        detail::show_item(app, index);
     }
 }
 
-/// Abre la pantalla de detalle de la tarjeta `index`.
-pub fn show_detail(app: &App, index: usize) {
-    let item = {
-        let mut grid = app.grid.borrow_mut();
-        let item = grid.items.get(index).cloned();
-        grid.detail = item.as_ref().map(|_| index);
-        item
-    };
-    let (Some(item), Some(w)) = (item, app.weak.upgrade()) else {
-        return;
-    };
-    w.set_detail_title(SharedString::from(item.title.as_str()));
-    w.set_detail_subtitle(SharedString::from(item.subtitle.as_str()));
-    let text = if item.description.is_empty() {
-        "Sin descripción.".to_string()
-    } else {
-        item.description.clone()
-    };
-    w.set_detail_text(SharedString::from(text));
-    w.set_detail_favorite(crate::library::is_favorite(app, &item));
-    w.set_detail_open(true);
-}
-
-/// Cierra el detalle y vuelve a la grilla.
-pub fn close_detail(app: &App) {
-    app.grid.borrow_mut().detail = None;
-    if let Some(w) = app.weak.upgrade() {
-        w.set_detail_open(false);
-    }
-}
-
-/// Trae las temporadas de una serie y muestra sus episodios de la primera temporada.
-pub fn open_series(app: &Rc<App>, series: Item) {
+/// Trae las temporadas de una serie y muestra su pantalla, con los episodios de la primera
+/// temporada. `placeholder` es la miniatura de su tarjeta: se ve hasta que llega la imagen grande.
+pub fn open_series(app: &Rc<App>, series: Item, placeholder: Option<Image>) {
     let Some(provider) = app
         .providers
         .iter()
@@ -332,6 +336,7 @@ pub fn open_series(app: &Rc<App>, series: Item) {
     let check = app.generation.clone();
     let generation = app.generation.next();
     clear_grid(app);
+    app.grid.borrow_mut().placeholder = placeholder;
     state::set_activity(app, crate::Activity::Catalog);
     set_status(app, format!("Cargando «{}»…", series.title));
     app.pool.run(move || {
@@ -358,14 +363,16 @@ fn show_series(app: &Rc<App>, series: Item, seasons: Vec<Season>) {
     let title = series.title.clone();
     {
         let mut grid = app.grid.borrow_mut();
-        grid.series = Some(SeriesView { seasons, season: 0 });
+        grid.series = Some(SeriesView {
+            item: series,
+            seasons,
+            season: 0,
+        });
         grid.category = 0;
         grid.detail = None;
     }
     show_season(app, 0);
-    if let Some(w) = app.weak.upgrade() {
-        w.set_detail_open(false);
-    }
+    detail::show_series(app);
     set_status(app, format!("Serie: {title}"));
 }
 
@@ -400,6 +407,7 @@ pub fn show_season(app: &Rc<App>, index: usize) {
     sync_chips(app);
     let _ = generation;
     visible_now(app);
+    detail::sync_series_play_label(app);
 }
 
 /// Cierra la serie y vuelve a la lista de la sección.
@@ -442,11 +450,20 @@ fn row_height(card_w: f32) -> f32 {
     card_w * 9.0 / 16.0 + 64.0
 }
 
+/// Miniaturas que se piden de una temporada. La lista de episodios no avisa qué parte se ve,
+/// así que se piden todas hasta este tope (cada una, ya decodificada, ocupa unos 150 KB).
+const EPISODE_THUMBS: usize = 48;
+
 /// Calcula las filas visibles según el tamaño de la ventana, para el listado recién mostrado.
 fn visible_now(app: &Rc<App>) {
     let Some(window) = app.weak.upgrade() else {
         return;
     };
+    if app.grid.borrow().series.is_some() {
+        let columns = app.grid.borrow().columns.max(1);
+        visible_rows(app, 0, EPISODE_THUMBS.div_ceil(columns));
+        return;
+    }
     let scale = window.window().scale_factor();
     let size = window.window().size().to_logical(scale);
     let columns = app.grid.borrow().columns.max(1) as f32;

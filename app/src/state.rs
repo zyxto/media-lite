@@ -15,7 +15,7 @@ use media_lite_providers::Provider;
 use slint::{Image, ModelRc, SharedString, VecModel, Weak};
 
 use crate::playback::Playback;
-use crate::{Activity, AppWindow, CardData, RowData};
+use crate::{Activity, AppWindow, CardData, EpisodeData, RowData};
 
 /// Ancho mínimo de una tarjeta; define cuántas columnas caben (la misma cuenta que en Slint).
 pub const CARD_MIN_WIDTH: f32 = 240.0;
@@ -23,8 +23,10 @@ pub const GAP: f32 = 16.0;
 pub const SIDEBAR: f32 = 200.0;
 pub const GUTTER: f32 = 40.0;
 
-/// Vista de una serie: sus temporadas, y la que se muestra en la grilla.
+/// Vista de una serie: sus temporadas, y la que se muestra en la lista de episodios.
 pub struct SeriesView {
+    /// La serie misma: es lo que muestra el encabezado de su pantalla.
+    pub item: Item,
     pub seasons: Vec<Season>,
     pub season: usize,
 }
@@ -44,6 +46,10 @@ pub struct Grid {
     pub category: usize,
     /// Serie abierta, si la grilla muestra episodios.
     pub series: Option<SeriesView>,
+    /// Los episodios de la temporada elegida, tal como los dibuja la pantalla de la serie.
+    pub episodes: Rc<VecModel<EpisodeData>>,
+    /// Miniatura de la serie que se está abriendo: se ve mientras llega su imagen grande.
+    pub placeholder: Option<Image>,
     /// Miniaturas ya pedidas, para no volver a pedirlas al desplazarse.
     pub requested: Vec<bool>,
     /// Búsquedas de plataformas que todavía no respondieron (búsqueda global).
@@ -62,6 +68,8 @@ impl Grid {
             categories: Vec::new(),
             category: 0,
             series: None,
+            episodes: Rc::new(VecModel::default()),
+            placeholder: None,
             requested: Vec::new(),
             pending: 0,
         }
@@ -71,6 +79,50 @@ impl Grid {
         let count = self.items.len().div_ceil(self.columns);
         let rows: Vec<RowData> = (0..count).map(|r| self.row(r)).collect();
         self.rows.set_vec(rows);
+        let episodes: Vec<EpisodeData> = match self.series {
+            Some(_) => (0..self.items.len()).map(|i| self.episode(i)).collect(),
+            None => Vec::new(),
+        };
+        self.episodes.set_vec(episodes);
+    }
+
+    /// El elemento que muestra la pantalla de detalle: el título abierto o, en una serie, la serie.
+    pub fn page_item(&self) -> Option<Item> {
+        match self.detail {
+            Some(i) => self.items.get(i).cloned(),
+            None => self.series.as_ref().map(|view| view.item.clone()),
+        }
+    }
+
+    /// El episodio `i` de la lista de la serie.
+    pub fn episode(&self, i: usize) -> EpisodeData {
+        let item = &self.items[i];
+        let image = self.images.get(i).cloned().flatten();
+        // Algunas plataformas repiten la sinopsis de la serie en cada episodio: no sirve de nada.
+        let repeats_series = self
+            .series
+            .as_ref()
+            .is_some_and(|view| same_text(&view.item.description, &item.description));
+        EpisodeData {
+            number: item
+                .episode
+                .map_or_else(|| (i + 1).to_string(), |n| n.to_string())
+                .into(),
+            title: SharedString::from(item.title.as_str()),
+            meta: item
+                .duration_secs
+                .map(crate::detail::format_duration)
+                .unwrap_or_default()
+                .into(),
+            description: if repeats_series {
+                SharedString::new()
+            } else {
+                SharedString::from(item.description.trim())
+            },
+            thumb: image.clone().unwrap_or_default(),
+            has_thumb: image.is_some(),
+            index: i as i32,
+        }
     }
 
     pub fn row(&self, r: usize) -> RowData {
@@ -113,6 +165,11 @@ impl Grid {
                 .collect(),
         }
     }
+}
+
+/// Si dos textos dicen lo mismo, sin contar los espacios ni los saltos de línea.
+fn same_text(a: &str, b: &str) -> bool {
+    a.split_whitespace().eq(b.split_whitespace())
 }
 
 /// Lo que el usuario eligió: plataforma, sección, categoría y búsqueda, si hay una.
@@ -232,4 +289,16 @@ pub fn section_labels() -> ModelRc<SharedString> {
         .map(|s| SharedString::from(s.label()))
         .collect();
     ModelRc::new(VecModel::from(names))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_text_ignores_line_breaks_and_extra_spaces() {
+        assert!(same_text("Uno.\n¿Dos?", "Uno.  ¿Dos? "));
+        assert!(!same_text("Uno.", "Otra cosa."));
+        assert!(same_text("", "  "));
+    }
 }

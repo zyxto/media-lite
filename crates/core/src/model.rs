@@ -119,6 +119,10 @@ pub struct Item {
     /// URL `http(s)://`, `file://` o `data:` de la miniatura.
     #[serde(default)]
     pub thumb: Option<String>,
+    /// Imagen apaisada y más grande, para el fondo de la pantalla de detalle. Si falta, ese
+    /// fondo se arma con `thumb`.
+    #[serde(default)]
+    pub backdrop: Option<String>,
     #[serde(default)]
     pub live: bool,
     #[serde(default)]
@@ -150,6 +154,7 @@ impl Item {
             title: title.into(),
             subtitle: String::new(),
             thumb: None,
+            backdrop: None,
             live: false,
             duration_secs: None,
             description: String::new(),

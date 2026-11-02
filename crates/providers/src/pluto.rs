@@ -220,6 +220,8 @@ impl Pluto {
             item.live = true;
             item.description = jstr(c, "summary");
             let mut thumb = image_of(c, "featuredImage");
+            // Un logo no sirve de fondo: solo la imagen destacada.
+            item.backdrop = Some(big(&thumb)).filter(|s| !s.is_empty());
             if thumb.is_empty() {
                 thumb = image_of(c, "colorLogoPNG");
             }
@@ -388,6 +390,20 @@ fn small(url: &str) -> String {
     format!("{base}?fm=jpg&w=480&h=270&fit=fill&q=70")
 }
 
+/// Pluto escribe los saltos de línea de las sinopsis como el texto literal «U+000A».
+fn clean_text(text: &str) -> String {
+    text.replace("U+000A", "\n").trim().to_string()
+}
+
+/// El fondo de la pantalla de detalle: la misma imagen a 960×540 (unos 90 KB).
+fn big(url: &str) -> String {
+    if !url.contains("images.pluto.tv") {
+        return url.to_string();
+    }
+    let base = url.split('?').next().unwrap_or(url);
+    format!("{base}?fm=jpg&w=960&h=540&fit=fill&q=75")
+}
+
 fn vod_item(o: &Value) -> Item {
     let kind = if jstr(o, "type") == "series" {
         Kind::Series
@@ -396,11 +412,11 @@ fn vod_item(o: &Value) -> Item {
     };
     let mut item = Item::new(Platform::Pluto, kind, jstr(o, "_id"), jstr(o, "name"));
     let desc = jstr(o, "description");
-    item.description = if desc.is_empty() {
+    item.description = clean_text(&if desc.is_empty() {
         jstr(o, "summary")
     } else {
         desc
-    };
+    });
     let genre = genre_es(&jstr(o, "genre"));
     let rating = jstr(o, "rating");
     let mut subtitle: Vec<String> = Vec::new();
@@ -430,6 +446,7 @@ fn vod_item(o: &Value) -> Item {
         thumb = jstr(o.get("featuredImage").unwrap_or(&Value::Null), "path");
     }
     item.thumb = Some(small(&thumb)).filter(|s| !s.is_empty());
+    item.backdrop = Some(big(&thumb)).filter(|s| !s.is_empty());
     item
 }
 
@@ -617,11 +634,9 @@ impl Provider for Pluto {
                 ep.episode = Some(jnum(e, "number") as u32);
                 ep.subtitle = format!("T{number} · E{}", ep.episode.unwrap_or(0));
                 if ep.thumb.is_none() {
-                    ep.thumb = Some(small(&jstr(
-                        e.get("thumbnail").unwrap_or(&Value::Null),
-                        "path",
-                    )))
-                    .filter(|s| !s.is_empty());
+                    let path = jstr(e.get("thumbnail").unwrap_or(&Value::Null), "path");
+                    ep.thumb = Some(small(&path)).filter(|s| !s.is_empty());
+                    ep.backdrop = Some(big(&path)).filter(|s| !s.is_empty());
                 }
                 if ep.description.is_empty() {
                     ep.description = series.description.clone();
@@ -665,6 +680,21 @@ mod tests {
             item.thumb.as_deref(),
             Some("https://images.pluto.tv/a.jpg?fm=jpg&w=480&h=270&fit=fill&q=70")
         );
+    }
+
+    #[test]
+    fn literal_line_breaks_in_synopses_become_real_ones() {
+        assert_eq!(clean_text("Uno.U+000A¿Dos? "), "Uno.\n¿Dos?");
+        assert_eq!(clean_text("Sin saltos"), "Sin saltos");
+    }
+
+    #[test]
+    fn big_asks_for_a_larger_image_than_small() {
+        let url = "https://images.pluto.tv/foo/bar.jpg?fm=jpg&w=1600";
+        assert!(small(url).contains("w=480&h=270"));
+        assert!(big(url).contains("w=960&h=540"));
+        assert_eq!(big("https://otro.test/a.jpg"), "https://otro.test/a.jpg");
+        assert_eq!(big(""), "");
     }
 
     #[test]

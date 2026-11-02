@@ -32,14 +32,18 @@ llegan en fases posteriores: ver [roadmap.md](roadmap.md).
 ## Uso
 
 - Barra lateral: plataformas y secciones (en vivo, películas, series).
-- Arriba: buscador y categorías. En una serie, los chips son sus temporadas.
-- Un clic en una tarjeta abre el detalle; **Reproducir** abre el video en una ventana flotante
-  chica, con controles en la app.
+- Arriba: buscador y categorías.
+- Un clic en una tarjeta abre el título a pantalla completa: de fondo su imagen, y encima la
+  sinopsis, **Reproducir** y **Favoritos**. **Reproducir** abre el video en una ventana flotante
+  chica, con controles en la app. Al volver, la lista queda donde estaba.
+- Una serie muestra lo mismo y, debajo, sus temporadas y episodios; un clic en un episodio lo
+  reproduce.
 
 | Tecla | Acción |
 |---|---|
 | `/` | buscar |
 | Esc o Retroceso | volver |
+| Enter | reproducir el título abierto |
 | F5 | recargar |
 | Espacio | pausa |
 | ← / → | 10 segundos atrás / adelante |

@@ -67,27 +67,44 @@ impl ThumbCache {
     /// Devuelve la miniatura de `url`, de la memoria, del disco o de la red, en ese orden.
     /// Puede bloquear: llamar desde un hilo de trabajo, no desde la interfaz.
     pub fn get(&self, url: &str) -> Result<Thumb> {
-        if let Some(png) = self.memory_get(url) {
-            return decode(&png, self.max_w, self.max_h);
+        self.get_sized(url, self.max_w, self.max_h)
+    }
+
+    /// Como `get`, pero reducida a `max_w` × `max_h` en vez del tamaño de una tarjeta: es para el
+    /// fondo de la pantalla de detalle. Cada tamaño tiene su propia entrada en la caché.
+    pub fn get_sized(&self, url: &str, max_w: u32, max_h: u32) -> Result<Thumb> {
+        let key = self.key(url, max_w, max_h);
+        if let Some(bytes) = self.memory_get(&key) {
+            return decode(&bytes, max_w, max_h);
         }
-        let disk_path = self.disk_path(url);
-        if let Some(png) = disk_path.as_ref().and_then(|p| fs::read(p).ok()) {
-            if let Ok(thumb) = decode(&png, self.max_w, self.max_h) {
-                self.memory_put(url, png);
+        let disk_path = self.disk_path(&key);
+        if let Some(bytes) = disk_path.as_ref().and_then(|p| fs::read(p).ok()) {
+            if let Ok(thumb) = decode(&bytes, max_w, max_h) {
+                self.memory_put(&key, bytes);
                 return Ok(thumb);
             }
         }
         let raw = fetch(&self.agent, url)?;
-        let thumb = decode(&raw, self.max_w, self.max_h)?;
-        if let Some(png) = encode_png(&thumb) {
+        let thumb = decode(&raw, max_w, max_h)?;
+        if let Some(bytes) = encode(&thumb) {
             if let Some(path) = disk_path {
-                if let Err(e) = crate::store::write_atomic(&path, &png, 0o644) {
+                if let Err(e) = crate::store::write_atomic(&path, &bytes, 0o644) {
                     log::debug!("no se pudo guardar la miniatura en disco: {e}");
                 }
             }
-            self.memory_put(url, png);
+            self.memory_put(&key, bytes);
         }
         Ok(thumb)
+    }
+
+    /// Clave de la caché. El tamaño de las tarjetas usa la URL sola: así se siguen encontrando las
+    /// miniaturas que ya estaban en disco.
+    fn key(&self, url: &str, max_w: u32, max_h: u32) -> String {
+        if (max_w, max_h) == (self.max_w, self.max_h) {
+            url.to_string()
+        } else {
+            format!("{url}#{max_w}x{max_h}")
+        }
     }
 
     fn memory_get(&self, url: &str) -> Option<Arc<Vec<u8>>> {
@@ -111,6 +128,9 @@ impl ThumbCache {
         }
     }
 
+    /// Archivo de la caché para una clave. Termina en `.png` aunque las imágenes grandes se guarden
+    /// como JPEG: así se siguen encontrando los archivos que ya había, y al leerlos el formato se
+    /// reconoce por el contenido, no por el nombre.
     fn disk_path(&self, url: &str) -> Option<PathBuf> {
         let dir = self.disk_dir.as_ref()?;
         let digest = Sha256::digest(url.as_bytes());
@@ -159,6 +179,40 @@ pub fn decode(bytes: &[u8], max_w: u32, max_h: u32) -> Result<Thumb> {
         height,
         rgba: small.into_raw(),
     })
+}
+
+/// Píxeles a partir de los cuales una imagen se guarda como JPEG y no como PNG: un PNG de una
+/// foto de 960×540 pesa casi un mega y un JPEG, unos 80 KB. Las tarjetas (256×144) siguen en PNG.
+const JPEG_FROM_PIXELS: usize = 400 * 225;
+
+/// Comprime la imagen para la caché: PNG, o JPEG si es grande y no tiene transparencia.
+fn encode(thumb: &Thumb) -> Option<Vec<u8>> {
+    let pixels = thumb.width as usize * thumb.height as usize;
+    let opaque = thumb.rgba.chunks_exact(4).all(|p| p[3] == 255);
+    if pixels >= JPEG_FROM_PIXELS && opaque {
+        encode_jpeg(thumb).or_else(|| encode_png(thumb))
+    } else {
+        encode_png(thumb)
+    }
+}
+
+fn encode_jpeg(thumb: &Thumb) -> Option<Vec<u8>> {
+    use image::ImageEncoder;
+    let rgb: Vec<u8> = thumb
+        .rgba
+        .chunks_exact(4)
+        .flat_map(|p| [p[0], p[1], p[2]])
+        .collect();
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85)
+        .write_image(
+            &rgb,
+            thumb.width,
+            thumb.height,
+            image::ExtendedColorType::Rgb8,
+        )
+        .ok()?;
+    Some(out)
 }
 
 fn encode_png(thumb: &Thumb) -> Option<Vec<u8>> {
@@ -249,6 +303,37 @@ mod tests {
             compressed < thumb.rgba.len(),
             "la memoria guarda el PNG, no los píxeles"
         );
+    }
+
+    #[test]
+    fn each_size_has_its_own_cache_entry() {
+        let cache = ThumbCache::new(http::agent(), None, 1 << 22, 320, 180);
+        let url = data_url(&tiny_png(960, 540));
+        let card = cache.get(&url).unwrap();
+        let hero = cache.get_sized(&url, 960, 540).unwrap();
+        assert_eq!((card.width, card.height), (320, 180));
+        assert_eq!((hero.width, hero.height), (960, 540));
+        // La segunda vez sale de la memoria y conserva su tamaño.
+        let again = cache.get_sized(&url, 960, 540).unwrap();
+        assert_eq!((again.width, again.height), (960, 540));
+    }
+
+    #[test]
+    fn big_opaque_images_are_cached_as_jpeg_and_small_ones_as_png() {
+        let big = decode(&tiny_png(960, 540), 960, 540).unwrap();
+        let jpeg = encode(&big).unwrap();
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "JPEG empieza con FFD8");
+        let back = decode(&jpeg, 960, 540).unwrap();
+        assert_eq!((back.width, back.height), (960, 540));
+        let small = decode(&tiny_png(256, 144), 256, 144).unwrap();
+        assert_eq!(&encode(&small).unwrap()[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn big_images_with_transparency_stay_png() {
+        let mut big = decode(&tiny_png(960, 540), 960, 540).unwrap();
+        big.rgba[3] = 0;
+        assert_eq!(&encode(&big).unwrap()[..4], b"\x89PNG");
     }
 
     #[test]

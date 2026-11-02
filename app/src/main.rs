@@ -4,6 +4,7 @@
 //! los resultados vuelven al hilo principal con `invoke_from_event_loop`. Todo el estado de la
 //! interfaz vive en el hilo principal (ver `state`).
 
+mod detail;
 mod library;
 mod listing;
 mod playback;
@@ -20,7 +21,7 @@ use media_lite_core::history;
 use media_lite_core::pool::{Generation, Pool};
 use media_lite_core::store::Store;
 use media_lite_core::thumbs::{self, ThumbCache};
-use media_lite_core::{http, paths};
+use media_lite_core::{http, paths, Section};
 use media_lite_player::Proxy;
 use media_lite_providers::registry;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -35,6 +36,15 @@ const THUMB_H: u32 = 144;
 /// Hilos de trabajo: dos de red y uno de imágenes, pensado para dos núcleos.
 const NET_THREADS: usize = 2;
 const IMAGE_THREADS: usize = 1;
+
+/// Índice elegido por una variable de entorno de desarrollo; `default` si falta o no entra en `len`.
+fn dev_index(var: &str, len: usize, default: usize) -> usize {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|n| *n < len)
+        .unwrap_or(default)
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Proceso aparte del solucionador de YouTube: lee JSON por stdin y responde por stdout.
@@ -51,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let providers = registry(store.dir(), settings.plex_english);
+    let providers_len = providers.len();
     let thumb_dir = paths::cache_dir().join("thumbs");
     let pool = Pool::new(NET_THREADS, "media-lite-net");
     let images = Pool::new(IMAGE_THREADS, "media-lite-img");
@@ -80,6 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let columns = listing::columns_for(settings.window_width as f32);
     let grid = listing::empty_grid(columns);
     window.set_rows(ModelRc::from(grid.rows.clone()));
+    window.set_episodes(ModelRc::from(grid.episodes.clone()));
 
     let app = Rc::new(App {
         weak: window.as_weak(),
@@ -93,8 +105,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         nav: RefCell::new(Nav {
             library: None,
             global: false,
-            platform: 0,
-            section: 1,
+            // Ganchos de desarrollo: MEDIA_LITE_PLATFORM / MEDIA_LITE_SECTION eligen el arranque.
+            platform: dev_index("MEDIA_LITE_PLATFORM", providers_len, 0),
+            section: dev_index("MEDIA_LITE_SECTION", Section::ALL.len(), 1),
             category: None,
             query: None,
         }),
@@ -151,10 +164,43 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    // Gancho de desarrollo: MEDIA_LITE_SNAPSHOT=ruta.ppm guarda lo que dibuja la ventana a los
+    // MEDIA_LITE_SNAPSHOT_AFTER segundos (8 si falta). Sale del propio renderizador: sirve para
+    // revisar la interfaz sin sacar capturas del escritorio.
+    if let Ok(path) = std::env::var("MEDIA_LITE_SNAPSHOT") {
+        let secs = std::env::var("MEDIA_LITE_SNAPSHOT_AFTER")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(8);
+        let weak = window.as_weak();
+        slint::Timer::single_shot(Duration::from_secs(secs), move || {
+            if let Some(w) = weak.upgrade() {
+                match save_snapshot(&w, &path) {
+                    Ok(()) => log::info!("captura guardada en {path}"),
+                    Err(e) => log::warn!("no se pudo guardar la captura: {e}"),
+                }
+            }
+        });
+    }
+
     window.run()?;
     // Cerrar mpv explícitamente: el estado de hilo local no se destruye al salir del proceso.
     state::with_app(playback::stop);
     save_window_state(&app);
+    Ok(())
+}
+
+/// Guarda lo que dibuja la ventana como imagen PPM (sin dependencias; se convierte con cualquier
+/// herramienta). Solo para el gancho de desarrollo `MEDIA_LITE_SNAPSHOT`.
+fn save_snapshot(window: &AppWindow, path: &str) -> Result<(), Box<dyn Error>> {
+    use std::io::Write;
+    let shot = window.window().take_snapshot()?;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
+    write!(out, "P6\n{} {}\n255\n", shot.width(), shot.height())?;
+    for pixel in shot.as_slice() {
+        out.write_all(&[pixel.r, pixel.g, pixel.b])?;
+    }
+    out.flush()?;
     Ok(())
 }
 
@@ -172,7 +218,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
             if let Some(w) = app.weak.upgrade() {
                 w.set_platform_index(i);
             }
-            listing::close_detail(&app);
+            detail::close(&app);
             listing::load(&app);
         });
     }
@@ -185,7 +231,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
                 nav.query = None;
                 nav.library = None;
             }
-            listing::close_detail(&app);
+            detail::close(&app);
             listing::load(&app);
         });
     }
@@ -195,7 +241,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
             let query = text.trim().to_string();
             app.nav.borrow_mut().query = (!query.is_empty()).then_some(query);
             app.nav.borrow_mut().library = None;
-            listing::close_detail(&app);
+            detail::close(&app);
             listing::load(&app);
         });
     }
@@ -212,7 +258,7 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
             if settings_open {
                 settings::close(&app);
             } else if detail_open {
-                listing::close_detail(&app);
+                detail::close(&app);
             } else if in_series {
                 listing::close_series(&app);
             }
@@ -224,16 +270,11 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     }
     {
         let app = app.clone();
-        window.on_play_requested(move || {
-            let (item, queue) = {
-                let grid = app.grid.borrow();
-                let item = grid.detail.and_then(|i| grid.items.get(i).cloned());
-                (item, grid.items.clone())
-            };
-            if let Some(item) = item {
-                playback::request(&app, item, queue);
-            }
-        });
+        window.on_play_requested(move || detail::play(&app));
+    }
+    {
+        let app = app.clone();
+        window.on_episode_clicked(move |i| detail::play_episode(&app, i.max(0) as usize));
     }
     {
         let app = app.clone();
@@ -277,7 +318,14 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     }
     {
         let app = app.clone();
-        window.on_settings_requested(move || settings::open(&app));
+        window.on_settings_requested(move || {
+            let open = app.weak.upgrade().is_some_and(|w| w.get_settings_open());
+            if open {
+                settings::close(&app);
+            } else {
+                settings::open(&app);
+            }
+        });
     }
     {
         let app = app.clone();

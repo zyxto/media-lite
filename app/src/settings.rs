@@ -81,10 +81,9 @@ pub fn open(app: &Rc<App>) {
     let rows = rows(&app.settings.borrow());
     if let Some(w) = app.weak.upgrade() {
         w.set_settings_rows(ModelRc::new(VecModel::from(rows)));
+        // El detalle queda abierto debajo: al cerrar Ajustes se vuelve a él.
         w.set_settings_open(true);
-        w.set_detail_open(false);
     }
-    app.grid.borrow_mut().detail = None;
 }
 
 /// Cierra la pantalla de Ajustes.

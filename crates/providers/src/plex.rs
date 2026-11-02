@@ -337,6 +337,19 @@ fn small(url: &str) -> String {
     )
 }
 
+/// El fondo de la pantalla de detalle: 960×540 por el mismo redimensionador. Las imágenes de TMDB
+/// se piden de 1280 px de ancho, que alcanza y pesa mucho menos que la original.
+fn big(url: &str) -> String {
+    if !url.starts_with("http") {
+        return url.to_string();
+    }
+    let source = url.replace("image.tmdb.org/t/p/original/", "image.tmdb.org/t/p/w1280/");
+    format!(
+        "https://images.plex.tv/photo?width=960&height=540&minSize=1&upscale=1&url={}",
+        pct_encode(&source)
+    )
+}
+
 /// "Season 2" → "Temporada 2", "Episode 3" → "Episodio 3".
 fn spanish(title: &str) -> String {
     if let Some(n) = title.strip_prefix("Season ") {
@@ -373,6 +386,8 @@ fn meta_item(m: &Value) -> Item {
             thumb = own;
         }
     }
+    // `art` es la imagen de fondo apaisada: la mejor para el detalle.
+    item.backdrop = Some(big(&thumb)).filter(|s| !s.is_empty());
     // Las imágenes de TMDB originales pesan megas: la de 500 px alcanza para una tarjeta.
     let thumb = thumb.replace("image.tmdb.org/t/p/original/", "image.tmdb.org/t/p/w500/");
     item.thumb = Some(small(&thumb)).filter(|s| !s.is_empty());
@@ -667,6 +682,15 @@ mod tests {
         assert!(!free_of_drm(&drm));
         assert!(free_of_drm(&hls));
         assert_eq!(meta_item(&hls).extra.as_deref(), Some("/p/1"));
+    }
+
+    #[test]
+    fn big_images_use_a_larger_size_and_a_lighter_tmdb_source() {
+        let url = big("https://image.tmdb.org/t/p/original/abc.jpg");
+        assert!(url.starts_with("https://images.plex.tv/photo?width=960&height=540"));
+        assert!(url.contains("t%2Fw1280%2Fabc.jpg") || url.contains("w1280"));
+        assert!(!url.contains("original"));
+        assert_eq!(big("/library/local.jpg"), "/library/local.jpg");
     }
 
     #[test]

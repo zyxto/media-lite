@@ -126,10 +126,7 @@ fn empty_text(shelf: Shelf) -> &'static str {
 
 /// Agrega o quita el elemento abierto de los favoritos.
 pub fn toggle_favorite(app: &Rc<App>) {
-    let item = {
-        let grid = app.grid.borrow();
-        grid.detail.and_then(|i| grid.items.get(i).cloned())
-    };
+    let item = app.grid.borrow().page_item();
     let Some(item) = item else {
         return;
     };
