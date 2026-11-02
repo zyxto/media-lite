@@ -33,6 +33,13 @@ export global Theme {
     out property <length> radius: 10px;
 }
 
+// Un programa de la guía: su hora local, su título y si está al aire.
+export struct GuideRow {
+    time: string,
+    title: string,
+    current: bool,
+}
+
 // Una línea de la letra: su texto y si es la que suena.
 export struct LyricRow {
     text: string,
@@ -578,6 +585,9 @@ export component AppWindow inherits Window {
     in property <[ChatLine]> chat-lines;
     // Letra sincronizada de la canción que suena (ver app/src/music.rs).
     in property <bool> lyrics-open;
+    // Guía de programación del canal en vivo (Pluto TV), en el mismo lugar que el chat.
+    in property <bool> guide-open;
+    in property <[GuideRow]> guide-rows;
     in property <[LyricRow]> lyrics-rows;
     // Aleatorio y repetir, y su texto.
     in property <bool> shuffle-on;
@@ -654,6 +664,51 @@ export component AppWindow inherits Window {
     }
 
     forward-focus: keys;
+
+    // Guía de programación: lo que está al aire y lo que sigue, con sus horas.
+    if root.guide-open : Rectangle {
+        x: root.width - 328px;
+        y: 12px;
+        width: 312px;
+        height: root.height - 136px;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+
+            Text {
+                text: "Programación";
+                color: Theme.muted;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            for row in root.guide-rows : HorizontalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: row.time;
+                    color: row.current ? Theme.accent : Theme.muted;
+                    font-size: 12px;
+                    font-weight: row.current ? 600 : 400;
+                    vertical-alignment: top;
+                    min-width: 40px;
+                }
+
+                Text {
+                    text: row.title;
+                    color: row.current ? Theme.accent : Theme.text;
+                    font-size: 13px;
+                    font-weight: row.current ? 600 : 400;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+    }
 
     // Letra de la canción que suena: en el mismo lugar que el chat (no se ven a la vez).
     if root.lyrics-open : Rectangle {

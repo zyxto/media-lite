@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | categories <plataforma> <sección> | seasons <plataforma> <id> | details <plataforma> <id> | feed <plataforma> <ids> | yt-resolve <id|url> [--client X] [--dump DIR] [--timing]";
+const USAGE: &str = "uso: media-lite-cli platforms | list <plataforma> <sección> | search <plataforma> <consulta> | categories <plataforma> <sección> | seasons <plataforma> <id> | details <plataforma> <id> | feed <plataforma> <ids> | guide <plataforma> <id> | yt-resolve <id|url> [--client X] [--dump DIR] [--timing]";
 
 fn run(args: &[String]) -> Result<String, String> {
     let providers = registry(&media_lite_core::paths::config_dir(), false);
@@ -77,6 +77,14 @@ fn run(args: &[String]) -> Result<String, String> {
             to_json(&seasons)
         }
         Some("yt-resolve") => yt_resolve(positional.get(1), &flags),
+        Some("guide") => {
+            // `guide <plataforma> <id-del-canal>`: la programación de las próximas horas.
+            let provider = provider_arg(&providers, positional.get(1))?;
+            let id = positional.get(2).ok_or("falta el id del canal")?;
+            let channel = Item::new(provider.platform(), Kind::Live, id.clone(), String::new());
+            let programs = provider.guide(&channel).map_err(|e| e.to_string())?;
+            to_json(&programs)
+        }
         Some("feed") => {
             // `feed <plataforma> <id1,id2,…>`: lo nuevo de esos canales (como «Siguiendo»).
             let provider = provider_arg(&providers, positional.get(1))?;

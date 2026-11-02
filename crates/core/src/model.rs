@@ -244,6 +244,14 @@ pub struct Details {
     pub sources: Vec<Source>,
 }
 
+/// Un programa de la guía de un canal en vivo: su horario (segundos desde la época) y su título.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Program {
+    pub start: u64,
+    pub stop: u64,
+    pub title: String,
+}
+
 /// Lo que soporta una plataforma. Se usa para mostrar u ocultar botones.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Caps {

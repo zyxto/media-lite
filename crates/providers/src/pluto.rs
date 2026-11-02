@@ -50,7 +50,7 @@ struct VodCat {
 }
 
 #[derive(Clone)]
-struct Program {
+struct Timeline {
     start: u64,
     stop: u64,
     title: String,
@@ -63,7 +63,7 @@ struct Cache {
     channels_at: u64,
     vod: Vec<VodCat>,
     vod_at: u64,
-    timelines: HashMap<String, Vec<Program>>,
+    timelines: HashMap<String, Vec<Timeline>>,
     timelines_at: u64,
 }
 
@@ -280,9 +280,9 @@ impl Pluto {
                 return;
             };
             for ch in jarr(&v, "data") {
-                let programs: Vec<Program> = jarr(ch, "timelines")
+                let programs: Vec<Timeline> = jarr(ch, "timelines")
                     .iter()
-                    .map(|t| Program {
+                    .map(|t| Timeline {
                         start: parse_iso(&jstr(t, "start")),
                         stop: parse_iso(&jstr(t, "stop")),
                         title: jstr(t, "title"),
@@ -451,6 +451,32 @@ fn vod_item(o: &Value) -> Item {
 }
 
 impl Provider for Pluto {
+    /// La programación del canal en las próximas 12 horas (la guía de Pluto TV).
+    fn guide(&self, channel: &Item) -> Result<Vec<media_lite_core::Program>> {
+        if channel.kind != Kind::Live && channel.kind != Kind::Channel {
+            return Err(Error::unsupported());
+        }
+        self.load_timelines(std::slice::from_ref(&channel.id), 12);
+        let Ok(c) = self.cache.lock() else {
+            return Err(Error::new(ErrorKind::Other, "estado dañado"));
+        };
+        let programs = c.timelines.get(&channel.id).cloned().unwrap_or_default();
+        if programs.is_empty() {
+            return Err(Error::new(
+                ErrorKind::Unavailable,
+                "Pluto TV no mandó la guía de este canal",
+            ));
+        }
+        Ok(programs
+            .into_iter()
+            .map(|t| media_lite_core::Program {
+                start: t.start,
+                stop: t.stop,
+                title: t.title,
+            })
+            .collect())
+    }
+
     fn platform(&self) -> Platform {
         Platform::Pluto
     }

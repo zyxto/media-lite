@@ -342,6 +342,7 @@ fn start(
     };
     // Una canción suena sin abrir la imagen; un video la muestra.
     let track = crate::music::is_track(item);
+    crate::guide::begin(app, item);
     if track {
         crate::music::begin_track(app, item);
     } else {
@@ -420,6 +421,7 @@ pub fn pump(app: &Rc<App>) {
     if let Some(position) = app.playback.borrow().as_ref().map(|pb| pb.position) {
         crate::music::pump(app, position);
     }
+    crate::guide::pump(app);
     crate::chat::pump(app);
     let countdown_done = {
         let guard = app.playback.borrow();
@@ -823,6 +825,7 @@ pub fn stop(app: &Rc<App>) {
     maybe_save(app, true);
     new_ticket();
     crate::music::clear(app);
+    crate::guide::clear(app);
     RETRIED.with(|r| *r.borrow_mut() = None);
     *app.playback.borrow_mut() = None;
     *app.player.borrow_mut() = None;

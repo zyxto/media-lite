@@ -12,10 +12,27 @@ systemd).
 
 ## Estado (2 de noviembre de 2026)
 
-- **Publicado:** `v0.4.0` (pantalla de título, arreglos del reproductor). `v0.1.0` tiene el primer AppImage con TV gratis.
-- **Hecho:** Fases 1, 2, 3 y 9 (con pendientes), 4a (solucionador), y parte de la 7 (Ajustes, biblioteca, búsqueda global, miniaturas solo de lo visible).
-- **Sin hacer:** YouTube (4b y 4c: streams y catálogo), Twitch y Kick (5), música (6), cuentas (8), y lo que quedó pendiente en cada fase.
-- **Pendiente de la laptop:** mediciones de la Fase 0, prueba de las distros de la Fase 9, y medir la RAM en release con 60 elementos.
+- **Publicado:** `v0.4.0`. **En `dev` (sin publicar):** todo lo de abajo. No hay release nueva todavía
+  porque la reproducción de YouTube (4b) y la de música no se probaron contra YouTube en la laptop.
+- **Hecho en `dev`:**
+  - Fases 1, 2, 3 (salvo la guía de Plex y `SP_RETIME`), 4a, 4b, 4c, 5, 6, 7 (salvo la búsqueda agrupada y
+    pegar cookies), 9 (salvo `cargo-about`, zsync y las pruebas en distros) y 10 (salvo heaptrack y capturas).
+  - **YouTube:** catálogo (portada, búsqueda, canales con pestañas), reproducción por la cascada
+    `visionos → tv_samsung → web_embedded` con solucionador, caché y espera del anuncio. Probado en vivo
+    lo que no toca `/player`: catálogo, `base.js` y solucionador con un reproductor real. **`/player` no se
+    pidió desde el agente**: lo corre el usuario con `media-lite-cli yt-resolve` (ver «Pruebas contra YouTube»).
+  - **Twitch y Kick:** portada, búsqueda, canales, directos, grabaciones y chat en vivo (Twitch por IRC,
+    Kick por Centrifugo), repetición del chat sincronizada. Probado en vivo.
+  - **YouTube Music:** portada, búsqueda, álbumes y artistas; solo audio; letras (lrclib); aleatorio,
+    repetir y radio. Catálogo probado en vivo. La reproducción de audio usa la misma cascada que el video.
+  - **Siguiendo:** canales de Twitch, Kick y YouTube (directos y videos nuevos por RSS). **Todas las plataformas**
+    por sección. **Ajustes:** soporte de YouTube, perfil de equipo lento, plataformas visibles, menú.
+- **Pendiente, que requiere la laptop o al usuario:** la Fase 0 completa (GPU, vainfo, mpv a 360/480/720p),
+  la prueba de `yt-resolve` contra YouTube, las distros de la Fase 9, heaptrack, y la RAM en release.
+- **Pendiente, que se puede hacer en código:** emotes del chat como imágenes; cola de música editable y en
+  disco; respaldo en SoundCloud; teclas multimedia; relacionados y listas de YouTube; comentarios de YouTube;
+  búsqueda agrupada por plataforma; pegar cookies desde la app (YouTube, Twitch, Kick); guía de Plex;
+  `SP_RETIME`; zsync; `cargo-about`; la fase 8 (cuentas) casi entera.
 
 **Qué frenaba YouTube y cuál es el camino (decidido el 2 de noviembre de 2026):**
 
@@ -439,7 +456,7 @@ Portar `pluto.cpp`, `runtime.cpp`, `plex.cpp` y `providers.cpp`:
 - [x] **Runtime** (`runtime.rs`): canales, películas y series desde `getconfiguration`; búsqueda; temporadas; MP4 de Kaltura para películas y HLS para canales. Probado contra la API real.
 - [x] **Plex** (`plex.rs`): cuenta anónima con token guardado en `plex.json` (0600); 90 canales (en español por defecto), filas de películas y series en español, búsqueda y temporadas. Probado contra la API real. La opción de incluir inglés se toma de Ajustes al arrancar (cambiarla requiere reiniciar).
 - [x] Ocultar todo lo que tiene DRM o pide suscripción (igual que Lumière).
-- [~] Panel lateral al reproducir: la grilla sigue visible con los demás canales, episodios o películas. **Falta la guía de programación (EPG)** de Pluto y Plex en el panel.
+- [~] Panel lateral al reproducir: la grilla sigue visible con los demás canales, episodios o películas. **Guía de programación (EPG) de Pluto TV en el panel**: hecha (7 programas con su hora local, el que está al aire marcado; probada en vivo con `media-lite-cli guide`). **Falta la de Plex**: no está portada.
 - [x] Anterior/siguiente para cambiar de canal o episodio (botones y teclas `<` `>`). El idioma de audio elegido sigue en el próximo episodio.
 - [x] **Reproducción continua** (movido desde la Fase 2): al terminar, cuenta 5 s y pasa al siguiente de la cola. Implementado; falta probarlo con un video que termine.
 - [x] Traducir géneros (`genre_es`) y nombres de idiomas (`lang_name`).
@@ -447,7 +464,7 @@ Portar `pluto.cpp`, `runtime.cpp`, `plex.cpp` y `providers.cpp`:
 
 Además, en esta fase: vista de **series** (chips de temporadas y los episodios en la grilla), chips de **categorías**, y dos pools (dos hilos de red y uno de imágenes) para que un pedido del usuario no espere a las miniaturas.
 
-**Pendiente de esta fase:** la guía (EPG) en el panel, `SP_RETIME` (primero probar si mpv maneja bien las discontinuidades de Pluto), y la pantalla de Ajustes (llega con la Fase 7).
+**Pendiente de esta fase:** la guía de Plex, `SP_RETIME` (primero probar si mpv maneja bien las discontinuidades de Pluto). La pantalla de Ajustes llegó con la Fase 7.
 
 **Terminado cuando** todo lo que muestran las capturas de `lumiere/capturas/` funcione en media-lite. → Inicio, búsqueda, películas, series con episodios, canales de Runtime y de Plex, y subtítulos: sí. Guía de canales y Ajustes: no todavía.
 

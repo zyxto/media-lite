@@ -18,7 +18,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use media_lite_core::{
-    Caps, Category, Details, Error, Item, Page, Platform, Result, Season, Section,
+    Caps, Category, Details, Error, Item, Page, Platform, Program, Result, Season, Section,
 };
 
 pub trait Provider: Send + Sync {
@@ -46,6 +46,11 @@ pub trait Provider: Send + Sync {
 
     /// Temporadas y episodios de una serie.
     fn seasons(&self, _series: &Item) -> Result<Vec<Season>> {
+        Err(Error::unsupported())
+    }
+
+    /// La programación de un canal en vivo (las próximas horas). Vacío si no hay guía.
+    fn guide(&self, _channel: &Item) -> Result<Vec<Program>> {
         Err(Error::unsupported())
     }
 

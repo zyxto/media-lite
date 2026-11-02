@@ -7,6 +7,7 @@
 mod chat;
 mod detail;
 mod follow;
+mod guide;
 mod library;
 mod listing;
 mod menu;

@@ -2604,6 +2604,7 @@ dependencies = [
  "crossbeam-channel",
  "env_logger",
  "fontique",
+ "libc",
  "log",
  "media-lite-chat",
  "media-lite-core",

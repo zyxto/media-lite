@@ -13,5 +13,5 @@ pub mod time;
 
 pub use error::{Error, ErrorKind, Result};
 pub use model::{
-    Caps, Category, Details, Item, Kind, Page, Platform, Season, Section, Shelf, Source,
+    Caps, Category, Details, Item, Kind, Page, Platform, Program, Season, Section, Shelf, Source,
 };

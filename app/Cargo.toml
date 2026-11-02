@@ -15,6 +15,8 @@ media-lite-player.workspace = true
 media-lite-chat.workspace = true
 media-lite-ytsolver.workspace = true
 serde_json.workspace = true
+# Solo para la hora local de la guía de programación (localtime_r).
+libc = "0.2"
 slint = { version = "1.18", default-features = false, features = ["std", "compat-1-18", "backend-winit", "renderer-winit-software", "renderer-winit-femtovg"] }
 crossbeam-channel.workspace = true
 # Slint necesita fontconfig para buscar fuentes del sistema. Con esta feature se carga
