@@ -2571,7 +2571,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "env_logger",
@@ -2588,7 +2588,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "media-lite-core",
  "media-lite-providers",
@@ -2598,7 +2598,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "crossbeam-channel",
@@ -2614,7 +2614,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite-player"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "crossbeam-channel",
@@ -2627,7 +2627,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite-providers"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "image",
@@ -2638,7 +2638,7 @@ dependencies = [
 
 [[package]]
 name = "media-lite-ytsolver"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "log",
  "media-lite-core",
