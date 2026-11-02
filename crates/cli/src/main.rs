@@ -80,11 +80,20 @@ fn run(args: &[String]) -> Result<String, String> {
         Some("feed") => {
             // `feed <plataforma> <id1,id2,…>`: lo nuevo de esos canales (como «Siguiendo»).
             let provider = provider_arg(&providers, positional.get(1))?;
-            let ids = positional.get(2).ok_or("falta la lista de canales (ids separados por coma)")?;
+            let ids = positional
+                .get(2)
+                .ok_or("falta la lista de canales (ids separados por coma)")?;
             let channels: Vec<Item> = ids
                 .split(',')
                 .filter(|id| !id.is_empty())
-                .map(|id| Item::new(provider.platform(), Kind::Series, id.to_string(), id.to_string()))
+                .map(|id| {
+                    Item::new(
+                        provider.platform(),
+                        Kind::Series,
+                        id.to_string(),
+                        id.to_string(),
+                    )
+                })
                 .collect();
             let items = provider.feed(&channels).map_err(|e| e.to_string())?;
             to_json(&items)

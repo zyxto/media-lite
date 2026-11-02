@@ -166,7 +166,7 @@ pub fn choose_sources(formats: &[(&Format, String)], hls: Option<&str>, live: bo
             .map(|url| vec![hls_source(url, true)])
             .unwrap_or_default();
     }
-    let audio = audio_url(formats);
+    let audio = audio_only_url(formats);
     // Mejor video por altura: el de mayor bitrate.
     let mut best: HashMap<u32, (u64, String)> = HashMap::new();
     for (f, url) in formats {
@@ -230,8 +230,8 @@ fn hls_source(url: &str, live: bool) -> Source {
     }
 }
 
-/// El audio AAC de 128 kb/s (itag 140), o el de mayor bitrate si ese falta.
-fn audio_url(formats: &[(&Format, String)]) -> Option<String> {
+/// Solo el audio de estos formatos: el AAC de 128 kb/s (itag 140), o el de mayor bitrate. Para la música.
+pub fn audio_only_url(formats: &[(&Format, String)]) -> Option<String> {
     formats
         .iter()
         .find(|(f, _)| f.itag == 140)

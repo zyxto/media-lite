@@ -42,3 +42,19 @@ fn warm_prepares_the_player_and_keeps_its_timestamp() {
     assert!(js.exists(), "reproductor preparado");
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+#[ignore = "necesita red (lrclib.net)"]
+fn lrclib_has_synced_lyrics_for_a_known_song() {
+    let agent = media_lite_core::http::agent();
+    let lines = media_lite_providers::lyrics::fetch(
+        &agent,
+        "Never Gonna Give You Up",
+        "Rick Astley",
+        "",
+        Some(213),
+    )
+    .expect("letra sincronizada");
+    assert!(lines.len() > 10, "{} líneas", lines.len());
+    assert!(lines.windows(2).all(|w| w[0].at <= w[1].at));
+}

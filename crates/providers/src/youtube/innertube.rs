@@ -79,7 +79,24 @@ impl Innertube {
 
     /// Pedido al endpoint `endpoint` (`browse`, `search`, `next`…) con el cliente web.
     pub fn post(&self, endpoint: &str, body: Value) -> Result<Value> {
-        let client = self.web()?;
+        self.post_as("web", YT, endpoint, body)
+    }
+
+    /// Pedido con otro cliente de `clients.toml` (por ejemplo `ytmusic`) a otro dominio (`base`,
+    /// como `https://music.youtube.com`).
+    pub fn post_as(
+        &self,
+        client_key: &str,
+        base: &str,
+        endpoint: &str,
+        body: Value,
+    ) -> Result<Value> {
+        let client = self.clients.get(client_key).cloned().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Other,
+                format!("falta el cliente {client_key} en clients.toml"),
+            )
+        })?;
         let visitor = self
             .visitor
             .lock()
@@ -97,13 +114,13 @@ impl Innertube {
         let number = client.number.to_string();
         let headers = [
             ("Content-Type", "application/json"),
-            ("Origin", YT),
-            ("X-Origin", YT),
-            ("Referer", "https://www.youtube.com/"),
+            ("Origin", base),
+            ("X-Origin", base),
+            ("Referer", base),
             ("X-Youtube-Client-Name", number.as_str()),
             ("X-Youtube-Client-Version", client.version.as_str()),
         ];
-        let url = format!("{YT}/youtubei/v1/{endpoint}?prettyPrint=false");
+        let url = format!("{base}/youtubei/v1/{endpoint}?prettyPrint=false");
         let text = payload.to_string();
         let response = http::request(&self.agent, "POST", &url, &headers, Some(&text), MAX_JSON)?;
         if !response.ok() {

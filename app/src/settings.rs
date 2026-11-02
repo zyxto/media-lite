@@ -287,7 +287,7 @@ mod tests {
         let s = Settings::default();
         let r = rows(&s);
         // Ocho filas fijas, luego las de plataformas (todas menos la de prueba).
-        assert_eq!(r.len(), ROW_PLATFORMS + 6);
+        assert_eq!(r.len(), ROW_PLATFORMS + switchable().len());
         assert_eq!(r[0].value.as_str(), "480p");
         assert_eq!(r[1].value.as_str(), "xv");
         assert_eq!(r[3].value.as_str(), "No");

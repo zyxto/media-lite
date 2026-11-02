@@ -10,17 +10,19 @@ pub enum Platform {
     Runtime,
     Plex,
     YouTube,
+    YouTubeMusic,
     Twitch,
     Kick,
     Demo,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 7] = [
+    pub const ALL: [Platform; 8] = [
         Platform::Pluto,
         Platform::Runtime,
         Platform::Plex,
         Platform::YouTube,
+        Platform::YouTubeMusic,
         Platform::Twitch,
         Platform::Kick,
         Platform::Demo,
@@ -33,6 +35,7 @@ impl Platform {
             Platform::Runtime => "runtime",
             Platform::Plex => "plex",
             Platform::YouTube => "youtube",
+            Platform::YouTubeMusic => "ytmusic",
             Platform::Twitch => "twitch",
             Platform::Kick => "kick",
             Platform::Demo => "demo",
@@ -46,6 +49,7 @@ impl Platform {
             Platform::Runtime => "Runtime",
             Platform::Plex => "Plex",
             Platform::YouTube => "YouTube",
+            Platform::YouTubeMusic => "YouTube Music",
             Platform::Twitch => "Twitch",
             Platform::Kick => "Kick",
             Platform::Demo => "Demo",

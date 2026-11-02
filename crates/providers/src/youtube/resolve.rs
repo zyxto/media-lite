@@ -47,6 +47,8 @@ pub struct Resolved {
     pub available_at: u64,
     pub client: String,
     pub live: bool,
+    /// Solo el audio (AAC), para la música.
+    pub audio: Option<String>,
     pub timing: Timing,
 }
 
@@ -171,6 +173,7 @@ impl Resolver {
             sources,
             client: "yt-dlp".into(),
             live,
+            audio: None,
             timing: Timing::default(),
         })
     }
@@ -332,6 +335,7 @@ impl Resolver {
             available_at,
             client: key.to_string(),
             live,
+            audio: streams::audio_only_url(&usable),
             timing: *timing,
         })
     }

@@ -4,6 +4,7 @@
 
 pub mod demo;
 pub mod kick;
+pub mod lyrics;
 pub mod plex;
 pub mod pluto;
 pub mod runtime;
@@ -11,6 +12,7 @@ pub mod text;
 pub mod twitch;
 pub mod util;
 pub mod youtube;
+pub mod ytmusic;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -59,6 +61,11 @@ pub trait Provider: Send + Sync {
 
     /// Olvida lo guardado de un elemento (una URL que venció). La próxima vez se vuelve a pedir.
     fn invalidate(&self, _item: &Item) {}
+
+    /// La radio de una canción: canciones parecidas para seguir sonando al terminar la cola.
+    fn radio(&self, _item: &Item) -> Result<Vec<Item>> {
+        Err(Error::unsupported())
+    }
 }
 
 /// Proveedores activos, en el orden de la barra lateral.
@@ -72,6 +79,7 @@ pub fn registry(config_dir: &Path, plex_english: bool) -> Vec<Arc<dyn Provider>>
         Arc::new(plex::Plex::new(config_dir, plex_english)),
         Arc::new(twitch::Twitch::new()),
         Arc::new(youtube::YouTube::new(config_dir)),
+        Arc::new(ytmusic::YouTubeMusic::new(config_dir)),
         Arc::new(kick::Kick::new()),
         Arc::new(demo::Demo::new()),
     ]
