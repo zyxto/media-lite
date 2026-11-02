@@ -1,0 +1,10 @@
+# Clientes de innertube de YouTube. Sus versiones cambian seguido: si YouTube cambia algo, se corrige
+# este archivo sin recompilar. Para probar un valor sin tocar el del AppImage, copiar el bloque a
+# ~/.config/media-lite/clients.toml (reemplaza el bloque con el mismo nombre).
+#
+# `number` es el valor de la cabecera X-YouTube-Client-Name. `name` es el de `context.client`.
+
+[web]
+name = "WEB"
+number = 1
+version = "2.20260708.00.00"

@@ -10,6 +10,7 @@ pub mod runtime;
 pub mod text;
 pub mod twitch;
 pub mod util;
+pub mod youtube;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -57,6 +58,7 @@ pub fn registry(config_dir: &Path, plex_english: bool) -> Vec<Arc<dyn Provider>>
         Arc::new(runtime::Runtime::new()),
         Arc::new(plex::Plex::new(config_dir, plex_english)),
         Arc::new(twitch::Twitch::new()),
+        Arc::new(youtube::YouTube::new(config_dir)),
         Arc::new(kick::Kick::new()),
         Arc::new(demo::Demo::new()),
     ]

@@ -2673,7 +2673,9 @@ dependencies = [
  "image",
  "log",
  "media-lite-core",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

@@ -562,20 +562,39 @@ ejecutable del solucionador es `std::env::current_exe()` con `--yt-solver` (ya e
 **Terminado cuando** `media-lite-cli yt-resolve dQw4w9WgXcQ --timing`, corrido por el usuario,
 muestre `Source` H.264 en < 3 s con la caché caliente, y el video se vea en mpv desde la app.
 
-**4c. Catálogo e interfaz**
+**4c. Catálogo e interfaz** — **hecho el 2 de noviembre de 2026** (commit «Fase 4c - …»)
 
-Se porta de `Sanson-FLinux/plugins/youtube/script.js`: la función `api()`, las constantes
-`TAB_VIDEOS`/`TAB_LIVE`/`TAB_SHORTS`/`ONLY_CHANNELS`, la portada con los canales temáticos `TOPICS`,
-y `videoIdOf()`/`navigation/resolve_url`. Hay que actualizar su `clientVersion` WEB a
-`2.20260708.00.00`. Se puede hacer en paralelo con 4b, porque estos pedidos no tocan `/player`.
+Se portó de `Sanson-FLinux/plugins/youtube/script.js`: la `api()` con el cliente web, las pestañas
+de canal, los parsers de videos (clásicos, `lockupViewModel`, Shorts y canales) y el `visitorData` de
+3 días. Lo que se necesitaba de `clients.toml` para el catálogo (el cliente web) se movió acá desde la
+4b, porque la 4c no puede esperar a ella. `Platform::YouTube` también se agregó acá.
 
-- [ ] Cliente innertube WEB (portada por temas, búsqueda de videos y canales, canal con pestañas
-      Videos/En vivo/Shorts, relacionados, `visitorData` guardado 3 días). Estos pedidos no piden ni JS ni token.
-- [ ] Directos de YouTube (HLS, sin PO token).
-- [ ] Botón Idioma: audio original por defecto (no el doblaje automático) y subtítulos, incluidos los automáticos.
-- [ ] Comentarios y chat en vivo (`live_chat/get_live_chat` por polling).
-- [ ] "Siguiendo" sin cuenta a través del RSS de cada canal.
-- [ ] Botones de filtro Videos / En vivo / Shorts cuando una lista mezcla tipos.
+Cambios frente a Sanson, por lo que se vio en vivo (2 de noviembre de 2026):
+
+- **Temas de la portada:** de los cinco de Sanson, quedan **Noticias** y **Deportes**. «Música» solo
+  trae mezclas (`RD…`) y «Videojuegos» llega vacío. La música de YouTube queda para la Fase 6.
+- **Canal:** se abre como serie, con sus pestañas como temporadas: «Videos», «En vivo» y «Shorts».
+- **Duración:** en los resultados nuevos viene como texto plano dentro de `thumbnailBadges`, en
+  cualquier overlay. Se lee desde todas las etiquetas de la miniatura.
+
+- [x] **Cliente innertube WEB**: `clients.toml` (`web`, versión `2.20260708.00.00`, reemplazable desde
+      `~/.config/media-lite/clients.toml`), portada por temas, búsqueda de videos y canales, y canal
+      con pestañas. Probado en vivo: búsqueda («rick astley», 91 resultados con página siguiente),
+      portada de Noticias (145 elementos) y las tres pestañas de un canal.
+- [x] **`visitorData` guardado 3 días** en `~/.config/media-lite/youtube.json`. Se renueva con cada
+      respuesta de YouTube. Sin cuenta: ni JS ni PO token.
+- [x] **Búsqueda y pestañas de canal**: los Shorts salen aparte, como una temporada más.
+- [ ] **Relacionados** (`next`): el trait `Provider` no tiene ese método todavía. Pasa a la 7, junto
+      con el resto del detalle.
+- [ ] **Listas de reproducción** (`playlistRenderer`, `lockupViewModel` de tipo lista): hoy se ignoran.
+      Sanson las mostraba como listas; acá pueden ser series con una sola temporada.
+- [ ] **Comentarios y chat en vivo** (`live_chat/get_live_chat` por polling): el chat se conecta al
+      `crates/chat` cuando haya streams (4b), porque necesita el id del video.
+- [ ] **«Siguiendo» sin cuenta** por el RSS de cada canal: pasa a la Fase 7 (la lista de canales
+      seguidos es común a todas las plataformas).
+- [x] **Botones de filtro Videos / En vivo / Shorts**: en los canales, cada pestaña es una temporada.
+- [ ] **Directos de YouTube (HLS)** y **botón Idioma** (audio original y subtítulos): dependen de
+      `/player`, así que pasan a la **4b**.
 
 ### Fase 5: Twitch y Kick (1–2 semanas)
 
