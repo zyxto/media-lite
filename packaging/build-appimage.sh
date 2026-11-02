@@ -79,6 +79,9 @@ install -m 644 packaging/media-lite.png "$APPDIR/usr/share/icons/hicolor/256x256
 install -m 644 LICENSE "$APPDIR/usr/share/doc/media-lite/LICENSE"
 install -m 644 app/assets/fonts/OFL.txt "$APPDIR/usr/share/doc/media-lite/Inter-OFL.txt"
 install -m 644 packaging/THIRD-PARTY-LICENSES.md "$APPDIR/usr/share/doc/media-lite/THIRD-PARTY-LICENSES.md"
+# Teclas de mpv: la app las usa si las encuentra junto a ella (ver playback::input_conf_path).
+mkdir -p "$APPDIR/usr/share/media-lite"
+install -m 644 packaging/input.conf "$APPDIR/usr/share/media-lite/input.conf"
 
 # Herramientas de AppImage. Sin FUSE dentro del contenedor, se usa --appimage-extract-and-run.
 TOOLS=/tmp/appimage-tools

@@ -582,6 +582,8 @@ export component AppWindow inherits Window {
     // Aleatorio y repetir, y su texto.
     in property <bool> shuffle-on;
     in property <string> repeat-label: "Repetir: no";
+    // Calidad que se está viendo ("480p"), para el botón de la barra.
+    in property <string> quality-label: "480p";
     in property <string> play-title;
     in property <string> play-time;
     in property <float> play-progress;
@@ -608,6 +610,8 @@ export component AppWindow inherits Window {
     in property <bool> can-step-next;
 
     callback shuffle-requested();
+    callback volume-requested(int);
+    callback quality-requested();
     callback repeat-requested();
     callback play-requested();
     callback toggle-pause-requested();
@@ -1302,6 +1306,25 @@ export component AppWindow inherits Window {
                                 color: root.play-buffering ? Theme.accent : Theme.muted;
                                 font-size: 12px;
                                 wrap: no-wrap;
+                            }
+
+                            // Volumen y calidad, a la derecha de la barra de estado.
+                            PlayButton {
+                                label: "Vol −";
+                                width: 60px;
+                                clicked => { root.volume-requested(-10); }
+                            }
+
+                            PlayButton {
+                                label: "Vol +";
+                                width: 60px;
+                                clicked => { root.volume-requested(10); }
+                            }
+
+                            PlayButton {
+                                label: root.quality-label;
+                                width: 64px;
+                                clicked => { root.quality-requested(); }
                             }
                         }
 

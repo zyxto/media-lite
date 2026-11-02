@@ -38,6 +38,8 @@ pub struct Options {
     pub ao: Option<String>,
     /// Mensajes detallados de mpv (para diagnosticar). Salen por el registro de la app.
     pub verbose: bool,
+    /// Archivo de teclas (`input.conf`) del empaquetado, si lo hay.
+    pub input_conf: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -50,6 +52,7 @@ impl Default for Options {
             cache_mb: 24,
             ao: None,
             verbose: false,
+            input_conf: None,
         }
     }
 }
@@ -276,6 +279,9 @@ pub fn build_args(options: &Options, socket: &Path) -> Vec<String> {
             (options.cache_mb / 3).max(1)
         ),
     ];
+    if let Some(path) = &options.input_conf {
+        args.push(format!("--input-conf={}", path.display()));
+    }
     if options.low_video {
         args.push("--framedrop=decoder+vo".to_string());
     } else {

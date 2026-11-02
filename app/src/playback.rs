@@ -88,6 +88,8 @@ pub struct Playback {
     pub buffer_secs: Option<f64>,
     /// Posición a la que saltar cuando mpv confirme el archivo: para retomar, o para seguir tras una recarga.
     pub pending_seek: Option<f64>,
+    /// Volumen de mpv, en porcentaje (100 por defecto).
+    pub volume: f64,
     /// Anuncios de Twitch que el proxy había quitado la última vez que se miró, y cuándo fue la última quita.
     pub ads_seen: u64,
     pub ads_at: Option<Instant>,
@@ -135,6 +137,7 @@ impl Playback {
             started: false,
             buffer_secs: None,
             pending_seek: None,
+            volume: 100.0,
             ads_seen: 0,
             ads_at: None,
         }
@@ -667,6 +670,63 @@ fn check_stall(app: &Rc<App>) {
     set_status(app, format!("Se trabó la imagen: ahora en {quality}p"));
 }
 
+/// Sube o baja el volumen en `delta` puntos (de 0 a 130, como mpv).
+pub fn volume_step(app: &Rc<App>, delta: f64) {
+    let volume = {
+        let mut guard = app.playback.borrow_mut();
+        let Some(pb) = guard.as_mut() else {
+            return;
+        };
+        pb.volume = (pb.volume + delta).clamp(0.0, 130.0);
+        pb.volume
+    };
+    if let Some(player) = app.player.borrow().as_ref() {
+        let _ = player.set_volume(volume);
+    }
+    set_status(app, format!("Volumen {volume:.0}%"));
+}
+
+/// Pasa a la calidad siguiente hacia arriba (240 → 360 → … → 1080 → 240). Recarga el video en la
+/// misma posición y la deja como preferida.
+pub fn cycle_quality(app: &Rc<App>) {
+    let (source, position, current) = {
+        let guard = app.playback.borrow();
+        let Some(pb) = guard.as_ref() else {
+            return;
+        };
+        (pb.source.clone(), pb.position, pb.max_height)
+    };
+    let next = higher_quality(current);
+    app.settings.borrow_mut().quality = next;
+    if let Err(e) = app.store.save_settings(&app.settings.borrow()) {
+        log::warn!("no se pudieron guardar los ajustes: {e}");
+    }
+    let url = url_for(app, &source, next);
+    let load = LoadOptions {
+        audio_url: source.audio_url.clone(),
+    };
+    if let Some(player) = app.player.borrow().as_ref() {
+        let _ = player.load(&url, &load);
+    }
+    if let Some(pb) = app.playback.borrow_mut().as_mut() {
+        pb.max_height = next;
+        pb.buffering = true;
+        pb.pending_seek = (position > 0.0).then_some(position);
+    }
+    set_status(app, format!("Calidad: {next}p"));
+}
+
+/// Siguiente escalón de calidad hacia arriba. Si ya está en el máximo, vuelve al mínimo.
+pub fn higher_quality(current: u32) -> u32 {
+    let mut steps = QUALITY_STEPS;
+    steps.reverse();
+    steps
+        .iter()
+        .copied()
+        .find(|&step| step > current)
+        .unwrap_or(steps[0])
+}
+
 /// Siguiente escalón de calidad hacia abajo. Si ya está en el mínimo, se queda igual.
 pub fn lower_quality(current: u32) -> u32 {
     QUALITY_STEPS
@@ -895,6 +955,7 @@ pub fn sync_ui(app: &Rc<App>) {
                 None => format!("Reproduciendo · {}p", pb.max_height),
             };
             window.set_play_status(status.into());
+            window.set_quality_label(format!("{}p", pb.max_height).into());
         }
         None => {
             window.set_playing(false);
@@ -919,8 +980,16 @@ pub fn choose_source(sources: &[Source], quality: u32) -> Option<Source> {
         .cloned()
 }
 
+/// El archivo de teclas del AppImage, si estamos corriendo desde uno.
+fn input_conf_path() -> Option<std::path::PathBuf> {
+    let appdir = std::env::var("APPDIR").ok()?;
+    let path = std::path::PathBuf::from(appdir).join("usr/share/media-lite/input.conf");
+    path.exists().then_some(path)
+}
+
 fn options_for(settings: &Settings) -> Options {
     Options {
+        input_conf: input_conf_path(),
         mode: Mode::Pip,
         vo: settings.vo.clone(),
         hwdec: settings.hwdec.clone(),
@@ -1051,6 +1120,13 @@ mod tests {
         assert_eq!(clock(65.4), "1:05");
         assert_eq!(clock(3725.0), "1:02:05");
         assert_eq!(clock(-3.0), "0:00");
+    }
+
+    #[test]
+    fn quality_steps_up_and_wraps_to_the_minimum() {
+        assert_eq!(higher_quality(480), 720);
+        assert_eq!(higher_quality(1080), 240);
+        assert_eq!(higher_quality(240), 360);
     }
 
     #[test]

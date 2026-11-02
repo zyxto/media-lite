@@ -418,8 +418,8 @@ Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Fem
 
 - [x] `player`: lanza mpv, se conecta por IPC y observa `time-pos`, `duration`, `pause`, `volume`, `track-list`, `core-idle`, `paused-for-cache` y `fullscreen`. (`demuxer-cache-state` queda para más adelante: `paused-for-cache` alcanza para detectar trabas.)
 - [x] Modo **ventana flotante** (PiP: `--ontop --no-border --geometry=480x270-16-16`). El modo solo audio existe en `player` (`Mode::AudioOnly`) y se usa en la Fase 6.
-- [~] Barra de controles: pausa, barra de avance (un clic salta), ±10 s, pantalla completa, **Idioma** (cicla pistas de audio) y **Subtítulos** hechos. Pendiente: control de volumen en la barra y selector de calidad durante la reproducción (la calidad hoy se elige en Ajustes).
-- [~] Teclas: espacio (pausa), flechas (±10 s) desde la app, y las de mpv por defecto en la ventana de video. Falta un `input.conf` propio con la tabla de mplayer (teclas `9/0`, `w/e/d/D`, `s/S`…): va con el empaquetado (Fase 9).
+- [x] Barra de controles: pausa, barra de avance (un clic salta), ±10 s, pantalla completa, **Idioma** (cicla pistas de audio), **Subtítulos**, **volumen** (−/+ de a 10 %) y **calidad durante la reproducción** (recarga en la misma posición y la deja como preferida).
+- [x] Teclas: espacio (pausa), flechas (±10 s) desde la app, y las de mpv por defecto en la ventana de video. `packaging/input.conf` trae la tabla de mplayer (`9` `0` `/` `*` volumen, `m` silenciar, `f` pantalla completa, `[` `]` `{` `}` velocidad, `s` captura) y el AppImage la carga. Las teclas `w/e/d/D` de mplayer no existen en mpv: quedan sin asignar.
 - [x] Retomar donde quedó: posición guardada cada 10 s y al cerrar, en `history.json`; al volver a abrir el video se usa `start=`.
 - [ ] Reproducción continua con cuenta regresiva de 5 s y sin mezclar shorts con videos. **Movido a la Fase 3**: necesita una lista de "siguientes" (episodios, canales, videos) que recién existe con los proveedores de TV.
 - [x] Si la imagen se traba más de 20 s, mpv se vuelve a cargar en la misma posición con una calidad menor (1080 → 720 → 480 → 360 → 240), y como mucho cada 30 s. Implementado; falta probarlo con una red lenta de verdad.
@@ -675,14 +675,14 @@ global por plataforma y pegar las cookies desde la app.
 - [x] **Resultado: `media-lite-x86_64.AppImage` de 9,3 MB.** Se ejecuta desde el archivo y abre la ventana. Sus dependencias del sistema son solo libc, libm, libgcc_s, libdl y libpthread: X11, fontconfig y GL se cargan con `dlopen`. mpv no va adentro (se pide con `sudo apt install mpv`).
 - [x] Si falta mpv, el app muestra el comando para instalarlo. El README explica `--appimage-extract-and-run` si falta FUSE.
 - [x] **Automatización**: `.github/workflows/appimage.yml` corre en cada push a `main` y publica el release `v<versión de Cargo.toml>` con el AppImage y su `.sha256`.
-- [ ] Integración con el menú (copiar el `.desktop` a `~/.local/share/applications`): pendiente.
+- [x] Integración con el menú: Ajustes → «Entrada en el menú» copia el acceso directo a `~/.local/share/applications`, con el `Exec` del AppImage (variable `APPIMAGE`) y el ícono guardado junto a la app.
 - [ ] Actualizaciones con zsync: pendiente.
 - [ ] Probar en antiX 23, Debian 11, Debian 12, MX y Ubuntu 22.04: **pendiente, requiere las máquinas**.
-- [ ] Licencias de terceros de los crates (con `cargo-about`): pendiente. Las de `ejs` y `rquickjs` llegan con la Fase 4.
+- [~] Licencias de terceros: `packaging/licenses.py` genera `packaging/THIRD-PARTY-LICENSES.md` (575 crates con su licencia, más ejs, Inter y mpv) y el AppImage lo incluye en su documentación. Falta `cargo-about` (los textos completos de cada licencia).
 
 ### Fase 10: Pulido y rendimiento (continuo)
 
-- [~] Perfil **"equipo lento"** de un clic: falta. Hoy se configura a mano en Ajustes (salida `xv`, video liviano, calidad 360p).
+- [x] Perfil **"equipo lento"** de un clic (Ajustes): 360p, video liviano y caché de miniaturas de 12 MB. Se vuelve atrás con el mismo clic.
 - [x] Miniaturas solo de las filas visibles, con dos filas de margen, y liberación de las que quedan lejos. Pendiente medir la RAM en release con 60 elementos (objetivo < 40 MB).
 - [ ] Medir con `heaptrack` y `/proc/<pid>/status` (VmRSS) en cada versión, con un tope en la CI.
 - [ ] Mensajes de error en español y comprensibles: en gran parte ya están (los errores de los proveedores se muestran en la barra).

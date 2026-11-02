@@ -347,6 +347,14 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         // Aleatorio y repetir: los modos viven en la cola de música y se aplican en el próximo cambio.
         let app = app.clone();
+        window.on_volume_requested(move |delta| playback::volume_step(&app, delta as f64));
+    }
+    {
+        let app = app.clone();
+        window.on_quality_requested(move || playback::cycle_quality(&app));
+    }
+    {
+        let app = app.clone();
         window.on_shuffle_requested(move || {
             crate::music::toggle_shuffle();
             playback::sync_ui(&app);
