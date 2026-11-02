@@ -33,6 +33,12 @@ export global Theme {
     out property <length> radius: 10px;
 }
 
+// Una línea de la letra: su texto y si es la que suena.
+export struct LyricRow {
+    text: string,
+    current: bool,
+}
+
 // Una línea del chat: autor y texto. `notice` es un aviso del sistema (suscripciones, cortes).
 export struct ChatLine {
     author: string,
@@ -570,6 +576,12 @@ export component AppWindow inherits Window {
     // Chat del directo o de la grabación, a la derecha de la grilla (ver app/src/chat.rs).
     in property <bool> chat-open;
     in property <[ChatLine]> chat-lines;
+    // Letra sincronizada de la canción que suena (ver app/src/music.rs).
+    in property <bool> lyrics-open;
+    in property <[LyricRow]> lyrics-rows;
+    // Aleatorio y repetir, y su texto.
+    in property <bool> shuffle-on;
+    in property <string> repeat-label: "Repetir: no";
     in property <string> play-title;
     in property <string> play-time;
     in property <float> play-progress;
@@ -595,6 +607,8 @@ export component AppWindow inherits Window {
     in property <bool> can-step-prev;
     in property <bool> can-step-next;
 
+    callback shuffle-requested();
+    callback repeat-requested();
     callback play-requested();
     callback toggle-pause-requested();
     callback seek-requested(float);
@@ -636,6 +650,32 @@ export component AppWindow inherits Window {
     }
 
     forward-focus: keys;
+
+    // Letra de la canción que suena: en el mismo lugar que el chat (no se ven a la vez).
+    if root.lyrics-open : Rectangle {
+        x: root.width - 328px;
+        y: 12px;
+        width: 312px;
+        height: root.height - 136px;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+            alignment: center;
+
+            for row in root.lyrics-rows : Text {
+                text: row.text;
+                color: row.current ? Theme.accent : Theme.muted;
+                font-size: row.current ? 16px : 13px;
+                font-weight: row.current ? 600 : 400;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
 
     // Chat: columna superpuesta a la derecha, por encima de la barra del reproductor. Se muestran
     // las últimas líneas, pegadas abajo.
@@ -1346,6 +1386,18 @@ export component AppWindow inherits Window {
                                 label: "Completa";
                                 horizontal-stretch: 1;
                                 clicked => { root.fullscreen-requested(); }
+                            }
+
+                            PlayButton {
+                                label: root.shuffle-on ? "Aleatorio ✓" : "Aleatorio";
+                                horizontal-stretch: 1;
+                                clicked => { root.shuffle-requested(); }
+                            }
+
+                            PlayButton {
+                                label: root.repeat-label;
+                                horizontal-stretch: 1;
+                                clicked => { root.repeat-requested(); }
                             }
 
                             PlayButton {

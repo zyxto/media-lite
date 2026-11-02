@@ -205,6 +205,13 @@ impl Player {
             .command(&[json!("set_property"), json!("fullscreen"), json!(on)])
     }
 
+    /// Enciende o apaga el video (`vid`). Apagado, una canción suena sin abrir la imagen.
+    pub fn set_video_enabled(&self, on: bool) -> std::io::Result<()> {
+        let value = if on { json!("auto") } else { json!("no") };
+        self.ipc
+            .command(&[json!("set_property"), json!("vid"), value])
+    }
+
     /// Cambia la pista de audio (`aid`). `None` la apaga.
     pub fn set_audio_track(&self, id: Option<i64>) -> std::io::Result<()> {
         let value = id.map(|i| json!(i)).unwrap_or(json!("no"));

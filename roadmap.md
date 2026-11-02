@@ -614,16 +614,29 @@ los canales de TV.
 
 ### Fase 6: Música (1–2 semanas)
 
-Portar `plugins/music` y `app_music.cpp`:
+Portar `plugins/music` y `app_music.cpp`. **Hecho el 2 de noviembre de 2026** (commits «Fase 6 - …»),
+salvo lo que se marca abajo.
 
-- [ ] YouTube Music: canciones, álbumes y artistas (seguir artistas), solo audio. Usa la misma cascada de clientes y el mismo solucionador de la Fase 4.
-- [ ] **Barra de reproducción persistente** abajo: la música sigue sonando mientras navegás, y el botón
-      «Sonando» lleva a la pantalla de la canción.
-- [ ] Portada grande + **letra sincronizada** (`lrclib.net`): la línea actual resaltada, y un clic salta a ese momento.
-- [ ] Cola editable (reproducir a continuación, agregar, subir/bajar/quitar/vaciar), guardada en disco.
-- [ ] Aleatorio, repetir todo/una, **radio** al terminar la cola.
-- [ ] Respaldo en SoundCloud si YouTube no entrega el audio.
-- [ ] Opcional: teclas multimedia del teclado (XF86AudioPlay/Next/Prev) con un atajo global X11.
+- [x] **YouTube Music** (`ytmusic`, provider propio): portada, búsqueda de canciones, álbumes y artistas.
+      Un álbum y un artista se abren como serie (sus canciones son las temporadas). Probado en vivo:
+      búsqueda («rick astley», 20 canciones con artista, álbum y duración), portada y álbum (10 canciones).
+      Solo audio: la fuente es el itag 140 (`Resolved.audio`), con la misma cascada del video.
+- [ ] **Seguir artistas**: «Siguiendo» hoy sigue canales de Twitch, Kick y YouTube, no artistas de YouTube Music.
+- [x] **Barra de reproducción persistente**: la barra sigue sonando mientras se navega (ya era así para los videos).
+- [x] **Letra sincronizada** (lrclib.net, con la coincidencia exacta y, si tiene pocas líneas, la búsqueda):
+      el panel muestra nueve líneas y marca la que suena. Probado en vivo con una canción conocida.
+      La portada grande es la de la pantalla de detalle.
+- [ ] **Cola editable** (reproducir a continuación, agregar, subir/bajar/quitar/vaciar) guardada en disco:
+      hoy la cola es la lista de la que vino la canción; no se edita ni se guarda.
+- [x] **Aleatorio, repetir todo / una, y radio al terminar la cola**: son botones de la barra. La radio
+      sale de `next` con `RDAMVM<id>`. Los modos sobreviven al cambio de canción.
+- [ ] **Respaldo en SoundCloud** si YouTube no entrega el audio: pendiente (Sanson lo hace con el client id
+      de la web de SoundCloud).
+- [ ] **Teclas multimedia** del teclado (XF86AudioPlay/Next/Prev): opcional, pendiente.
+
+**Terminado cuando** se pueda escuchar música de YouTube sin ver el video, con letra y sin cortarse al
+terminar una canción. → Falta verificar la reproducción en la laptop (el audio sale por la misma
+cascada que el video, que el usuario prueba con `media-lite-cli yt-resolve`).
 
 ### Fase 7: Unificación (1 semana)
 

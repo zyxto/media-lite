@@ -9,6 +9,7 @@ mod detail;
 mod follow;
 mod library;
 mod listing;
+mod music;
 mod playback;
 mod settings;
 mod state;
@@ -341,6 +342,21 @@ fn wire_callbacks(app: &Rc<App>, window: &AppWindow) {
     {
         let app = app.clone();
         window.on_audio_cycle_requested(move || playback::cycle_audio(&app));
+    }
+    {
+        // Aleatorio y repetir: los modos viven en la cola de música y se aplican en el próximo cambio.
+        let app = app.clone();
+        window.on_shuffle_requested(move || {
+            crate::music::toggle_shuffle();
+            playback::sync_ui(&app);
+        });
+    }
+    {
+        let app = app.clone();
+        window.on_repeat_requested(move || {
+            crate::music::cycle_repeat();
+            playback::sync_ui(&app);
+        });
     }
     {
         let app = app.clone();

@@ -337,8 +337,18 @@ fn start(
     let load = LoadOptions {
         audio_url: source.audio_url.clone(),
     };
+    // Una canción suena sin abrir la imagen; un video la muestra.
+    let track = crate::music::is_track(item);
+    if track {
+        crate::music::begin_track(app, item);
+    } else {
+        crate::music::clear(app);
+    }
     let loaded = match app.player.borrow().as_ref() {
-        Some(player) => player.load(&url, &load),
+        Some(player) => {
+            let _ = player.set_video_enabled(!track);
+            player.load(&url, &load)
+        }
         None => return,
     };
     match loaded {
@@ -372,7 +382,13 @@ pub fn step(app: &Rc<App>, delta: i64) {
         let Some(pb) = guard.as_ref() else {
             return;
         };
-        neighbor(&pb.queue, pb.queue_index, delta).map(|i| {
+        let next = if delta > 0 {
+            let neighbor = |from: usize, d: i64| neighbor(&pb.queue, from, d);
+            crate::music::next_index(&pb.queue, pb.queue_index, crate::music::modes(), &neighbor)
+        } else {
+            neighbor(&pb.queue, pb.queue_index, delta)
+        };
+        next.map(|i| {
             (
                 pb.queue[i].clone(),
                 pb.queue.clone(),
@@ -398,6 +414,9 @@ pub fn pump(app: &Rc<App>) {
     apply_pending_audio(app);
     check_stall(app);
     maybe_save(app, false);
+    if let Some(position) = app.playback.borrow().as_ref().map(|pb| pb.position) {
+        crate::music::pump(app, position);
+    }
     crate::chat::pump(app);
     let countdown_done = {
         let guard = app.playback.borrow();
@@ -547,19 +566,28 @@ fn refresh_waiting(pb: &mut Playback) {
 /// Terminó el video: se guarda como visto. Si hay siguiente en la cola, empieza la cuenta regresiva.
 fn on_eof(app: &Rc<App>) {
     maybe_save(app, true);
-    let has_next = {
-        let mut guard = app.playback.borrow_mut();
-        let Some(pb) = guard.as_mut() else {
+    // Lo que sigue: el siguiente de la cola (según el aleatorio y la repetición), o la radio si es
+    // una canción y la cola se terminó.
+    let (next, radio_seed) = {
+        let guard = app.playback.borrow();
+        let Some(pb) = guard.as_ref() else {
             return;
         };
-        let next = neighbor(&pb.queue, pb.queue_index, 1).is_some();
-        if next {
+        let neighbor = |from: usize, d: i64| neighbor(&pb.queue, from, d);
+        let next =
+            crate::music::next_index(&pb.queue, pb.queue_index, crate::music::modes(), &neighbor);
+        let seed = (next.is_none() && crate::music::is_track(&pb.item)).then(|| pb.item.clone());
+        (next.is_some(), seed)
+    };
+    if next {
+        if let Some(pb) = app.playback.borrow_mut().as_mut() {
             pb.countdown = Some(Instant::now());
         }
-        next
-    };
-    if !has_next {
-        finish(app, true);
+        return;
+    }
+    match radio_seed {
+        Some(item) => crate::music::start_radio(app, item),
+        None => finish(app, true),
     }
 }
 
@@ -649,7 +677,7 @@ pub fn lower_quality(current: u32) -> u32 {
 }
 
 /// Termina la reproducción actual: guarda el historial y limpia la barra.
-fn finish(app: &Rc<App>, completed: bool) {
+pub fn finish(app: &Rc<App>, completed: bool) {
     maybe_save(app, completed);
     *app.playback.borrow_mut() = None;
     crate::chat::end(app);
@@ -734,6 +762,7 @@ pub fn seek_ratio(app: &Rc<App>, ratio: f64) {
 pub fn stop(app: &Rc<App>) {
     maybe_save(app, true);
     new_ticket();
+    crate::music::clear(app);
     RETRIED.with(|r| *r.borrow_mut() = None);
     *app.playback.borrow_mut() = None;
     *app.player.borrow_mut() = None;
@@ -836,7 +865,14 @@ pub fn sync_ui(app: &Rc<App>) {
             window.set_play_progress(progress as f32);
             window.set_play_paused(pb.paused);
             window.set_can_step_prev(neighbor(&pb.queue, pb.queue_index, -1).is_some());
-            window.set_can_step_next(neighbor(&pb.queue, pb.queue_index, 1).is_some());
+            let modes = crate::music::modes();
+            window.set_shuffle_on(modes.shuffle);
+            window.set_repeat_label(modes.repeat.label().into());
+            let can_next = {
+                let neighbor = |from: usize, d: i64| neighbor(&pb.queue, from, d);
+                crate::music::next_index(&pb.queue, pb.queue_index, modes, &neighbor).is_some()
+            };
+            window.set_can_step_next(can_next);
             window.set_play_buffering(pb.buffering && pb.countdown.is_none());
             let status = match pb.countdown {
                 Some(since) => {
