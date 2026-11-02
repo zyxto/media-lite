@@ -103,3 +103,30 @@ pub fn get(agent: &Agent, url: &str, headers: &[(&str, &str)], limit: u64) -> Re
 pub fn get_bytes(agent: &Agent, url: &str, limit: u64) -> Result<Vec<u8>> {
     get(agent, url, &[], limit).map(|r| r.body)
 }
+
+/// Mensaje que se muestra cuando Kick (detrás de Cloudflare) bloquea la red. Kick no se esquiva:
+/// queda desactivado hasta reiniciar la app.
+pub const KICK_BLOCKED: &str =
+    "Kick bloqueó el acceso desde esta red. Kick queda desactivado hasta reiniciar la app.";
+
+/// Un desafío de Cloudflare: 403 o 503 con una página HTML en vez de JSON.
+pub fn is_cloudflare_challenge(status: u16, body: &[u8]) -> bool {
+    matches!(status, 403 | 503)
+        && body
+            .iter()
+            .find(|b| !b.is_ascii_whitespace())
+            .is_some_and(|b| *b == b'<')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cloudflare_html_is_a_challenge_and_json_is_not() {
+        assert!(is_cloudflare_challenge(403, b"  <!DOCTYPE html><html>"));
+        assert!(is_cloudflare_challenge(503, b"<html>"));
+        assert!(!is_cloudflare_challenge(403, br#"{"message":"forbidden"}"#));
+        assert!(!is_cloudflare_challenge(200, b"<html>"));
+    }
+}

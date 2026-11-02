@@ -9,6 +9,7 @@ pub mod paths;
 pub mod pool;
 pub mod store;
 pub mod thumbs;
+pub mod time;
 
 pub use error::{Error, ErrorKind, Result};
 pub use model::{

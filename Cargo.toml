@@ -5,6 +5,7 @@ members = [
     "crates/providers",
     "crates/player",
     "crates/ytsolver",
+    "crates/chat",
     "crates/cli",
     "app",
 ]
@@ -21,6 +22,7 @@ media-lite-core = { path = "crates/core" }
 media-lite-providers = { path = "crates/providers" }
 media-lite-player = { path = "crates/player" }
 media-lite-ytsolver = { path = "crates/ytsolver" }
+media-lite-chat = { path = "crates/chat" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"

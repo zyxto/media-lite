@@ -21,8 +21,6 @@ const REFERER: &str = "https://kick.com/";
 const PAGE: u64 = 24;
 const MAX_PAGES: u64 = 10;
 const MAX_JSON: u64 = 4 * 1024 * 1024;
-pub const BLOCKED: &str =
-    "Kick bloqueó el acceso desde esta red. Kick queda desactivado hasta reiniciar la app.";
 
 pub struct Kick {
     agent: Agent,
@@ -52,7 +50,7 @@ impl Kick {
         let headers = [("Accept", "application/json"), ("Referer", REFERER)];
         let send = || http::request(&self.agent, "GET", url, &headers, None, MAX_JSON);
         let response = send().or_else(|_| send())?;
-        if is_challenge(response.status, &response.body) {
+        if http::is_cloudflare_challenge(response.status, &response.body) {
             self.blocked.store(true, Ordering::Relaxed);
             return Err(blocked_error());
         }
@@ -258,16 +256,7 @@ impl Provider for Kick {
 }
 
 fn blocked_error() -> Error {
-    Error::network(BLOCKED)
-}
-
-/// Un desafío de Cloudflare: 403 o 503 con una página HTML.
-pub fn is_challenge(status: u16, body: &[u8]) -> bool {
-    matches!(status, 403 | 503)
-        && body
-            .iter()
-            .find(|b| !b.is_ascii_whitespace())
-            .is_some_and(|b| *b == b'<')
+    Error::network(http::KICK_BLOCKED)
 }
 
 /// Lista de directos: `data.livestreams`, o `data` si viene directo.
@@ -421,14 +410,6 @@ mod tests {
         let list = livestreams(&json);
         assert_eq!(list.len(), 1);
         assert_eq!(live_item(&list[0], &Value::Null).id, "a");
-    }
-
-    #[test]
-    fn cloudflare_html_is_a_challenge_and_json_is_not() {
-        assert!(is_challenge(403, b"  <!DOCTYPE html><html>"));
-        assert!(is_challenge(503, b"<html>"));
-        assert!(!is_challenge(403, br#"{"message":"forbidden"}"#));
-        assert!(!is_challenge(200, b"<html>"));
     }
 
     #[test]
