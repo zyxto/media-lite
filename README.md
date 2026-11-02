@@ -4,8 +4,9 @@ Televisión gratis, películas y series en una sola app liviana, pensada para eq
 (2 GB de RAM, procesadores sin SSE4) con antiX, Debian o cualquier derivado de Debian de 64 bits.
 
 Junta **Pluto TV**, **Runtime** y **Plex** con un reproductor propio (mpv en su ventana). Está
-escrita en Rust con la interfaz Slint, sin navegador embebido. YouTube, Twitch, Kick y la música
-llegan en fases posteriores: ver [roadmap.md](roadmap.md).
+escrita en Rust con la interfaz Slint, sin navegador embebido. La versión publicada trae Pluto TV,
+Runtime y Plex. YouTube, YouTube Music, Twitch y Kick ya están en la rama `dev`, todavía sin publicar
+(ver [roadmap.md](roadmap.md)).
 
 ## Instalar
 
