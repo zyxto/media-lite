@@ -584,31 +584,38 @@ hacer antes que la 4b. Hay que portar `Sanson-FLinux/plugins/twitch/script.js` (
 `plugins/kick/script.js` (430), `ws.c` y la parte de chat de `app_watch.cpp`. Agregar
 `Platform::Twitch` y `Platform::Kick`, con archivos `crates/providers/src/{twitch.rs, kick.rs}`.
 
-- [ ] **Twitch, catálogo**: `POST https://gql.twitch.tv/gql` con `Client-Id:
-      kimne78kx3ncx6brgo4mv6wki5h1ko` (el del cliente web, el mismo que usan Sanson y streamlink),
-      `Origin`/`Referer` `https://www.twitch.tv`. Las consultas se copian de Sanson (`STREAM`,
-      `USER`, `VIDEO`): portada, búsqueda, canal y VODs, con páginas de 30.
-- [ ] **Twitch, stream**: `streamPlaybackAccessToken(channelName, params:{platform:"web",
-      playerBackend:"mediaplayer", playerType:"site"})` → `{value, signature}`, y después
-      `https://usher.ttvnw.net/api/channel/hls/<login>.m3u8?sig=…&token=…&allow_source=true&supported_codecs=h264&p=<rand>`.
-      `supported_codecs=h264` evita las variantes HEVC/AV1, que el T4500 no decodifica. Los demás
-      parámetros están en `usher()` de Sanson.
-      Los VODs usan `videoPlaybackAccessToken` y `usher.ttvnw.net/vod/<id>.m3u8`. Ver `usher()` en
-      Sanson.
-- [ ] **Anuncios de Twitch en el proxy** (como streamlink): un segmento es anuncio si cae dentro de
-      un `#EXT-X-DATERANGE` con `CLASS="twitch-stitched-ad"` o un `ID` que empieza con
-      `stitched-ad-`. Esos segmentos se quitan de la playlist y la barra muestra «Saltando el
-      anuncio de Twitch…» mientras dura. También se quitan los `#EXT-X-TWITCH-PREFETCH`. Es un
-      filtro nuevo en `crates/player/src/playlist.rs`, junto a los patrones de Pluto.
-- [ ] **Kick**: portada `https://web.kick.com/api/v1/livestreams?page=N&limit=30&sort=featured_home`,
-      canal `https://kick.com/api/v2/channels/<slug>` (con `playback_url`, el HLS del directo), VODs
-      `…/api/v2/channels/<slug>/videos` y `https://kick.com/api/v1/video/<uuid>`. Kick está detrás de
-      Cloudflare: si responde con un desafío (403 con HTML), **no se esquiva** (nada de imitar
-      huellas TLS). Se muestra «Kick bloqueó el acceso desde esta red» y Kick queda deshabilitado
-      en la sesión.
-- [ ] Chat en vivo de Twitch (IRC sobre WebSocket) y de Kick (su WebSocket), con emotes
-      (caché de imágenes compartida y límite de ~300 mensajes en memoria).
-- [ ] Repetición del chat sincronizada con `time-pos` en VODs de Twitch y Kick.
+**Hecho el 2 de noviembre de 2026** (commits «Fase 5 - …»). Lo probado en vivo desde el entorno de
+desarrollo: portada, búsqueda, canal con temporadas, directo y grabación de cada plataforma, y chat
+en vivo de Twitch y de Kick. Un canal se abre como serie (`Kind::Series`), porque `Kind::Channel` lo usan
+los canales de TV.
+
+- [x] **Twitch, catálogo**: `POST https://gql.twitch.tv/gql` con `Client-Id:
+      kimne78kx3ncx6brgo4mv6wki5h1ko`, `Origin`/`Referer` `https://www.twitch.tv`. Portada de directos
+      con cursor, búsqueda (canales, directos y grabaciones), canal con «En vivo» y «Transmisiones anteriores».
+- [x] **Twitch, stream**: `streamPlaybackAccessToken` y `usher` con `supported_codecs=h264`
+      (probado: 5 variantes, todas `avc1`). Las grabaciones usan `videoPlaybackAccessToken`.
+- [x] **Anuncios de Twitch en el proxy**: `playlist::strip_twitch_ads` quita los segmentos de cada
+      `EXT-X-DATERANGE` `twitch-stitched-ad` (o `stitched-ad-`) mientras dura, y los
+      `EXT-X-TWITCH-PREFETCH`. Se activa con `Source.twitch_ads` y la consulta `a=1` al proxy. La barra
+      muestra «Saltando el anuncio de Twitch…» durante 6 s después de cada corte.
+- [x] **Kick**: portada (`web.kick.com/api/v1/livestreams`), búsqueda, canal (`api/v2/channels/<slug>`,
+      con `playback_url`) y grabaciones (`api/v2/channels/<slug>/videos`, con respaldo en
+      `api/v1/channels/<slug>`). Probado en vivo.
+- [x] **Cloudflare en Kick**: un 403/503 con HTML no se esquiva. Muestra «Kick bloqueó el acceso desde
+      esta red» y deja Kick desactivado en la sesión (`core::http::KICK_BLOCKED`).
+- [x] **Chat en vivo de Twitch** (IRC sobre WebSocket, anónimo, con etiquetas, emotes y bits; crate
+      `media-lite-chat`). Probado en vivo.
+- [x] **Chat en vivo de Kick** (historial, luego Centrifugo con token de invitado). Probado en vivo.
+- [x] **Repetición del chat de las grabaciones** sincronizada con `time-pos`: Twitch por comentarios
+      del video, Kick por cursor. Probadas las dos en vivo (los primeros tres minutos).
+- [x] **Panel de chat** en la ventana: columna superpuesta a la derecha, con las últimas 60 líneas y
+      hasta 300 en memoria. Se abre al reproducir un directo o una grabación con chat.
+- [ ] **Emotes como imágenes**: hoy el chat muestra el nombre del emote (`Kappa`), y la URL de la
+      imagen ya viene en cada mensaje. Falta bajarla con la caché de miniaturas y mostrarla en la fila.
+- [ ] **Estado del panel en la laptop**: el diseño superpuesto no se miró a ojo en la laptop (solo se
+      comprobó que compila y que la app arranca).
+- [ ] **Twitch, directos con tokens restringidos** (suscriptores, sin cuenta): hoy se muestra el motivo
+      que da Twitch. Pasa a la Fase 8 (cuentas).
 
 ### Fase 6: Música (1–2 semanas)
 

@@ -2605,6 +2605,7 @@ dependencies = [
  "env_logger",
  "fontique",
  "log",
+ "media-lite-chat",
  "media-lite-core",
  "media-lite-player",
  "media-lite-providers",

@@ -4,6 +4,7 @@
 //! los resultados vuelven al hilo principal con `invoke_from_event_loop`. Todo el estado de la
 //! interfaz vive en el hilo principal (ver `state`).
 
+mod chat;
 mod detail;
 mod library;
 mod listing;
@@ -117,6 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         history: RefCell::new(history),
         favorites: RefCell::new(favorites),
         grid: RefCell::new(grid),
+        chat: RefCell::new(chat::Chat::default()),
     });
     state::install(app.clone());
 

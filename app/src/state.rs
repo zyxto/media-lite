@@ -206,6 +206,8 @@ pub struct App {
     pub history: RefCell<Vec<history::Entry>>,
     pub favorites: RefCell<Vec<Item>>,
     pub grid: RefCell<Grid>,
+    /// Chat junto al reproductor (directos y repeticiones).
+    pub chat: RefCell<crate::chat::Chat>,
 }
 
 thread_local! {

@@ -87,6 +87,9 @@ pub struct Playback {
     pub buffer_secs: Option<f64>,
     /// Posición a la que saltar cuando mpv confirme el archivo: para retomar, o para seguir tras una recarga.
     pub pending_seek: Option<f64>,
+    /// Anuncios de Twitch que el proxy había quitado la última vez que se miró, y cuándo fue la última quita.
+    pub ads_seen: u64,
+    pub ads_at: Option<Instant>,
 }
 
 impl Playback {
@@ -131,6 +134,8 @@ impl Playback {
             started: false,
             buffer_secs: None,
             pending_seek: None,
+            ads_seen: 0,
+            ads_at: None,
         }
     }
 }
@@ -236,6 +241,7 @@ fn start(
 ) {
     let quality = app.settings.borrow().quality;
     let url = url_for(app, source, quality);
+    crate::chat::begin(app, item);
 
     // mpv se puede cerrar desde su ventana: si el proceso guardado ya no existe, se descarta
     // (antes de lanzar otro) y se lanza uno nuevo.
@@ -281,6 +287,8 @@ fn start(
             );
             // Retomar: el salto se hace cuando mpv confirme el archivo (ver `LoadOptions`).
             pb.pending_seek = resume.filter(|t| *t > 0.0);
+            // Los anuncios que se quitaron antes de este video no cuentan.
+            pb.ads_seen = app.proxy.as_ref().map_or(0, |p| p.ads_removed());
             *app.playback.borrow_mut() = Some(pb);
             // Todavía no está confirmado: mpv puede rechazarlo o no abrirlo. Se confirma al cargar.
             set_status(app, format!("Abriendo «{}»…", item.title));
@@ -323,6 +331,7 @@ pub fn pump(app: &Rc<App>) {
     apply_pending_audio(app);
     check_stall(app);
     maybe_save(app, false);
+    crate::chat::pump(app);
     let countdown_done = {
         let guard = app.playback.borrow();
         guard
@@ -573,6 +582,7 @@ pub fn lower_quality(current: u32) -> u32 {
 fn finish(app: &Rc<App>, completed: bool) {
     maybe_save(app, completed);
     *app.playback.borrow_mut() = None;
+    crate::chat::end(app);
     sync_ui(app);
 }
 
@@ -655,6 +665,7 @@ pub fn stop(app: &Rc<App>) {
     maybe_save(app, true);
     *app.playback.borrow_mut() = None;
     *app.player.borrow_mut() = None;
+    crate::chat::end(app);
     sync_ui(app);
 }
 
@@ -720,10 +731,25 @@ fn next_in_cycle<T: PartialEq + Copy>(options: &[T], current: Option<T>) -> Opti
 }
 
 /// Actualiza la barra de controles con el estado actual.
+/// Cuánto dura el aviso «Saltando el anuncio de Twitch…» después del último anuncio quitado.
+const AD_NOTICE: Duration = Duration::from_secs(6);
+
+/// Anota cuándo el proxy quitó anuncios de Twitch en este video, para mostrar el aviso.
+fn note_ads(app: &Rc<App>) {
+    let total = app.proxy.as_ref().map_or(0, |p| p.ads_removed());
+    if let Some(pb) = app.playback.borrow_mut().as_mut() {
+        if pb.source.twitch_ads && total > pb.ads_seen {
+            pb.ads_seen = total;
+            pb.ads_at = Some(Instant::now());
+        }
+    }
+}
+
 pub fn sync_ui(app: &Rc<App>) {
     let Some(window) = app.weak.upgrade() else {
         return;
     };
+    note_ads(app);
     let playback = app.playback.borrow();
     match playback.as_ref() {
         Some(pb) => {
@@ -747,6 +773,9 @@ pub fn sync_ui(app: &Rc<App>) {
                         .as_secs_f32()
                         .ceil() as u32;
                     format!("Siguiente en {left} s")
+                }
+                None if pb.ads_at.is_some_and(|t| t.elapsed() < AD_NOTICE) => {
+                    "Saltando el anuncio de Twitch…".to_string()
                 }
                 // Antes del primer cuadro: mpv todavía no abrió el stream.
                 None if pb.buffering && !pb.started => "Conectando con el video…".to_string(),

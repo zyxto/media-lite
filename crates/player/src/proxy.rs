@@ -7,6 +7,8 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -34,6 +36,7 @@ pub struct Filters {
 pub struct Proxy {
     port: u16,
     token: String,
+    ads_removed: Arc<AtomicU64>,
 }
 
 impl Proxy {
@@ -42,10 +45,12 @@ impl Proxy {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let port = listener.local_addr()?.port();
         let token = random_token()?;
+        let ads_removed = Arc::new(AtomicU64::new(0));
         let state = Shared {
             port,
             token: token.clone(),
             agent,
+            ads_removed: Arc::clone(&ads_removed),
         };
         thread::Builder::new()
             .name("hls-proxy".into())
@@ -54,7 +59,16 @@ impl Proxy {
                     handle(stream, &state);
                 }
             })?;
-        Ok(Proxy { port, token })
+        Ok(Proxy {
+            port,
+            token,
+            ads_removed,
+        })
+    }
+
+    /// Segmentos de anuncio de Twitch que se quitaron desde que arrancó el proxy.
+    pub fn ads_removed(&self) -> u64 {
+        self.ads_removed.load(Ordering::Relaxed)
     }
 
     /// URL para que mpv abra `upstream` a través del proxy, con los filtros indicados.
@@ -87,6 +101,7 @@ struct Shared {
     port: u16,
     token: String,
     agent: Agent,
+    ads_removed: Arc<AtomicU64>,
 }
 
 fn handle(stream: TcpStream, state: &Shared) {
@@ -168,6 +183,9 @@ fn serve(target: &str, state: &Shared) -> Result<String, u16> {
     let text = if twitch_ads {
         let (text, removed) = playlist::strip_twitch_ads(&text);
         if removed > 0 {
+            state
+                .ads_removed
+                .fetch_add(removed as u64, Ordering::Relaxed);
             log::debug!("proxy: {removed} segmentos de anuncio de Twitch quitados");
         }
         text
@@ -232,6 +250,7 @@ mod tests {
         let proxy = Proxy {
             port: 4242,
             token: "abc".into(),
+            ads_removed: Arc::new(AtomicU64::new(0)),
         };
         let filters = Filters {
             max_height: Some(480),
@@ -261,6 +280,7 @@ mod tests {
             port: 1,
             token: "secreto".into(),
             agent: http::agent(),
+            ads_removed: Arc::new(AtomicU64::new(0)),
         };
         assert_eq!(serve("/otro/playlist?u=x", &state), Err(404));
     }

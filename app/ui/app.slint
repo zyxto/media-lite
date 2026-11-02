@@ -33,6 +33,14 @@ export global Theme {
     out property <length> radius: 10px;
 }
 
+// Una línea del chat: autor y texto. `notice` es un aviso del sistema (suscripciones, cortes).
+export struct ChatLine {
+    author: string,
+    text: string,
+    color: color,
+    notice: bool,
+}
+
 export struct CardData {
     title: string,
     subtitle: string,
@@ -559,6 +567,9 @@ export component AppWindow inherits Window {
     in property <string> detail-subtitle;
     in property <string> detail-text;
     in property <bool> playing;
+    // Chat del directo o de la grabación, a la derecha de la grilla (ver app/src/chat.rs).
+    in property <bool> chat-open;
+    in property <[ChatLine]> chat-lines;
     in property <string> play-title;
     in property <string> play-time;
     in property <float> play-progress;
@@ -624,6 +635,47 @@ export component AppWindow inherits Window {
     }
 
     forward-focus: keys;
+
+    // Chat: columna superpuesta a la derecha, por encima de la barra del reproductor. Se muestran
+    // las últimas líneas, pegadas abajo.
+    if root.chat-open : Rectangle {
+        x: root.width - 328px;
+        y: 12px;
+        width: 312px;
+        height: root.height - 136px;
+        background: Theme.surface;
+        border-radius: 12px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 6px;
+            alignment: end;
+
+            for line in root.chat-lines : HorizontalLayout {
+                spacing: 6px;
+
+                Text {
+                    text: line.author;
+                    color: line.color;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: top;
+                    wrap: no-wrap;
+                    overflow: elide;
+                    max-width: 110px;
+                }
+
+                Text {
+                    text: line.text;
+                    color: line.notice ? Theme.accent : Theme.text;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+    }
 
     keys := FocusScope {
         width: parent.width;

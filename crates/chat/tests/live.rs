@@ -49,3 +49,17 @@ fn twitch_replay_has_comments_around_a_minute_in() {
     assert!(!messages.is_empty(), "sin comentarios en el minuto 1");
     assert!(messages.iter().all(|m| m.time_ms.is_some()));
 }
+
+#[test]
+#[ignore = "necesita red y una grabación de Kick (cambiar el uuid si ya no existe)"]
+fn kick_replay_reads_the_video_clock() {
+    let mut replay =
+        Replay::kick("c4a80015-c8ac-47a9-a980-ffa277755103").expect("fecha de la grabación");
+    let mut total = 0;
+    for minute in 1..=3u64 {
+        let messages = replay.around(minute * 60_000);
+        total += messages.len();
+        assert!(messages.iter().all(|m| m.time_ms.is_some()));
+    }
+    assert!(total > 0, "sin mensajes en los primeros tres minutos");
+}
