@@ -219,6 +219,7 @@ fn url_for(app: &App, source: &Source, max_height: u32) -> String {
             &Filters {
                 max_height: Some(max_height),
                 drop: source.drop.clone(),
+                twitch_ads: source.twitch_ads,
             },
         ),
         _ => source.url.clone(),
@@ -871,6 +872,7 @@ mod tests {
             live: false,
             audio_url: None,
             drop: Vec::new(),
+            twitch_ads: false,
         }
     }
 

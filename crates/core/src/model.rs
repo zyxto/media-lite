@@ -9,14 +9,18 @@ pub enum Platform {
     Pluto,
     Runtime,
     Plex,
+    Twitch,
+    Kick,
     Demo,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 4] = [
+    pub const ALL: [Platform; 6] = [
         Platform::Pluto,
         Platform::Runtime,
         Platform::Plex,
+        Platform::Twitch,
+        Platform::Kick,
         Platform::Demo,
     ];
 
@@ -26,6 +30,8 @@ impl Platform {
             Platform::Pluto => "pluto",
             Platform::Runtime => "runtime",
             Platform::Plex => "plex",
+            Platform::Twitch => "twitch",
+            Platform::Kick => "kick",
             Platform::Demo => "demo",
         }
     }
@@ -36,6 +42,8 @@ impl Platform {
             Platform::Pluto => "Pluto TV",
             Platform::Runtime => "Runtime",
             Platform::Plex => "Plex",
+            Platform::Twitch => "Twitch",
+            Platform::Kick => "Kick",
             Platform::Demo => "Demo",
         }
     }
@@ -201,6 +209,9 @@ pub struct Source {
     /// Fragmentos de URL de segmentos que se quitan al reproducir (anuncios de Pluto TV, por ejemplo).
     #[serde(default)]
     pub drop: Vec<String>,
+    /// Quitar los cortes publicitarios de Twitch (`EXT-X-DATERANGE` de `twitch-stitched-ad`).
+    #[serde(default)]
+    pub twitch_ads: bool,
 }
 
 /// Una temporada de una serie, con sus episodios.

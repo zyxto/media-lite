@@ -613,6 +613,7 @@ impl Provider for Pluto {
                 live: item.live,
                 audio_url: None,
                 drop: AD_PATTERNS.iter().map(|s| s.to_string()).collect(),
+                twitch_ads: false,
             }],
         })
     }

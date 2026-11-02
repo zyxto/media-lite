@@ -76,14 +76,15 @@ fn run(args: &[String]) -> Result<String, String> {
             let provider = provider_arg(&providers, positional.get(1))?;
             let id = positional.get(2).ok_or("falta el id")?;
             let kind = match flag(&flags, "--kind").as_deref() {
-                Some("live") | Some("channel") => Kind::Channel,
+                Some("live") => Kind::Live,
+                Some("channel") => Kind::Channel,
                 Some("series") => Kind::Series,
                 Some("episode") => Kind::Episode,
                 Some("movie") => Kind::Movie,
                 _ => Kind::Video,
             };
             let mut item = Item::new(provider.platform(), kind, id.clone(), String::new());
-            item.live = matches!(kind, Kind::Channel);
+            item.live = matches!(kind, Kind::Live | Kind::Channel);
             let details = provider.details(&item).map_err(|e| e.to_string())?;
             to_json(&details)
         }

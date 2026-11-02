@@ -27,6 +27,8 @@ pub struct Filters {
     pub max_height: Option<u32>,
     /// Fragmentos de URL de segmentos que se quitan (anuncios).
     pub drop: Vec<String>,
+    /// Quitar los cortes publicitarios de Twitch (ver `playlist::strip_twitch_ads`).
+    pub twitch_ads: bool,
 }
 
 pub struct Proxy {
@@ -74,6 +76,9 @@ fn query(upstream: &str, filters: &Filters) -> String {
     );
     if let Some(h) = filters.max_height {
         q.push_str(&format!("&h={h}"));
+    }
+    if filters.twitch_ads {
+        q.push_str("&a=1");
     }
     q
 }
@@ -130,6 +135,7 @@ fn serve(target: &str, state: &Shared) -> Result<String, u16> {
     let mut upstream = None;
     let mut drop = Vec::new();
     let mut max_height = None;
+    let mut twitch_ads = false;
     for pair in query_string.split('&') {
         let Some((key, value)) = pair.split_once('=') else {
             continue;
@@ -145,6 +151,7 @@ fn serve(target: &str, state: &Shared) -> Result<String, u16> {
                     .collect()
             }
             "h" => max_height = value.parse::<u32>().ok(),
+            "a" => twitch_ads = value == "1",
             _ => {}
         }
     }
@@ -158,9 +165,22 @@ fn serve(target: &str, state: &Shared) -> Result<String, u16> {
         502u16
     })?;
     let text = playlist::limit_variants(&text, max_height);
+    let text = if twitch_ads {
+        let (text, removed) = playlist::strip_twitch_ads(&text);
+        if removed > 0 {
+            log::debug!("proxy: {removed} segmentos de anuncio de Twitch quitados");
+        }
+        text
+    } else {
+        text
+    };
 
     // Las listas hijas siguen con los mismos filtros.
-    let filters = Filters { max_height, drop };
+    let filters = Filters {
+        max_height,
+        drop,
+        twitch_ads,
+    };
     let prefix = format!("http://127.0.0.1:{}/{}/playlist?", state.port, state.token);
     let proxy = move |child: &str| format!("{prefix}{}", query(child, &filters));
     let drop_list = decode_drop(query_string);
@@ -216,10 +236,11 @@ mod tests {
         let filters = Filters {
             max_height: Some(480),
             drop: vec!["/ads/".to_string()],
+            twitch_ads: true,
         };
         let url = proxy.url_for("https://x.test/a.m3u8?b=1", &filters);
         assert!(url.starts_with("http://127.0.0.1:4242/abc/playlist?u="));
-        assert!(url.ends_with("&h=480"), "{url}");
+        assert!(url.ends_with("&h=480&a=1"), "{url}");
         let u = url.split("u=").nth(1).unwrap().split('&').next().unwrap();
         assert_eq!(decode(u).as_deref(), Some("https://x.test/a.m3u8?b=1"));
         assert_eq!(

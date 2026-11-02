@@ -3,10 +3,12 @@
 //! Los proveedores son bloqueantes y se llaman desde hilos de trabajo, nunca desde la interfaz.
 
 pub mod demo;
+pub mod kick;
 pub mod plex;
 pub mod pluto;
 pub mod runtime;
 pub mod text;
+pub mod twitch;
 pub mod util;
 
 use std::path::Path;
@@ -54,6 +56,8 @@ pub fn registry(config_dir: &Path, plex_english: bool) -> Vec<Arc<dyn Provider>>
         Arc::new(pluto::Pluto::new(config_dir)),
         Arc::new(runtime::Runtime::new()),
         Arc::new(plex::Plex::new(config_dir, plex_english)),
+        Arc::new(twitch::Twitch::new()),
+        Arc::new(kick::Kick::new()),
         Arc::new(demo::Demo::new()),
     ]
 }

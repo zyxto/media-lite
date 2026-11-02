@@ -177,6 +177,99 @@ fn attr<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     }
 }
 
+/// Quita los cortes publicitarios de Twitch de una playlist de medios.
+///
+/// Twitch marca cada corte con `#EXT-X-DATERANGE` de clase `twitch-stitched-ad` (o con un `ID` que
+/// empieza con `stitched-ad-`). Se quitan los segmentos que siguen a esa marca mientras dura su
+/// `DURATION`; si no trae duración, solo el primer segmento. Se quitan también las líneas
+/// `#EXT-X-TWITCH-PREFETCH`, que anuncian segmentos que todavía no se emitieron.
+///
+/// Devuelve la playlist y cuántos segmentos se quitaron. Un corte deja un `#EXT-X-DISCONTINUITY`.
+pub fn strip_twitch_ads(text: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    // Etiquetas que van justo antes de un segmento (se escriben solo si el segmento se queda).
+    let mut pending: Vec<&str> = Vec::new();
+    // Segundos de corte que quedan por quitar, y si el próximo segmento es del corte.
+    let mut ad_seconds_left = 0.0_f64;
+    let mut ad_next = false;
+    let mut in_break = false;
+    let mut removed = 0;
+    let mut extinf_seconds = 0.0_f64;
+
+    for line in text.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            if rest.starts_with("EXT-X-TWITCH-PREFETCH") {
+                continue;
+            }
+            if rest.starts_with("EXT-X-DATERANGE") && is_twitch_ad(trimmed) {
+                ad_seconds_left = attr(trimmed, "DURATION")
+                    .and_then(|d| d.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+                    .max(0.0);
+                ad_next = true;
+                continue;
+            }
+            if rest.starts_with("EXTINF") {
+                extinf_seconds = rest
+                    .trim_start_matches("EXTINF:")
+                    .split(',')
+                    .next()
+                    .and_then(|d| d.trim().parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                pending.push(trimmed);
+                continue;
+            }
+            if is_segment_tag(rest) {
+                pending.push(trimmed);
+                continue;
+            }
+            flush_plain(&mut out, &mut pending);
+            out.push_str(trimmed);
+            out.push('\n');
+            continue;
+        }
+
+        // Una URI: un segmento o una lista hija (que no es un segmento de anuncio).
+        let is_ad = ad_next || ad_seconds_left > 0.0;
+        ad_next = false;
+        if is_ad {
+            ad_seconds_left -= extinf_seconds;
+            removed += 1;
+            pending.clear();
+            if !in_break {
+                out.push_str("#EXT-X-DISCONTINUITY\n");
+                in_break = true;
+            }
+            continue;
+        }
+        in_break = false;
+        flush_plain(&mut out, &mut pending);
+        out.push_str(trimmed);
+        out.push('\n');
+    }
+    flush_plain(&mut out, &mut pending);
+    (out, removed)
+}
+
+/// Una marca de corte publicitario de Twitch.
+fn is_twitch_ad(line: &str) -> bool {
+    attr(line, "CLASS") == Some("twitch-stitched-ad")
+        || attr(line, "ID").is_some_and(|id| id.starts_with("stitched-ad-"))
+}
+
+/// Escribe las etiquetas pendientes de un segmento que se queda.
+fn flush_plain(out: &mut String, pending: &mut Vec<&str>) {
+    for tag in pending.iter() {
+        out.push_str(tag);
+        out.push('\n');
+    }
+    pending.clear();
+}
+
 /// Etiquetas que van justo antes de un segmento y viajan con él.
 fn is_segment_tag(rest: &str) -> bool {
     rest.starts_with("EXT-X-PROGRAM-DATE-TIME")
@@ -316,6 +409,40 @@ mod tests {
             out.contains("URI=\"https://cdn.example.com/live/keys/k.bin\""),
             "{out}"
         );
+    }
+
+    const TWITCH: &str = "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-TWITCH-PREFETCH:https://cdn/next.ts\n\
+#EXTINF:2.000,live\nhttps://cdn/1.ts\n\
+#EXT-X-DATERANGE:ID=\"stitched-ad-1\",CLASS=\"twitch-stitched-ad\",START-DATE=\"2026-11-02T10:00:00Z\",DURATION=4.000\n\
+#EXT-X-DISCONTINUITY\n#EXTINF:2.000,Amazon\nhttps://cdn/ad1.ts\n\
+#EXTINF:2.000,Amazon\nhttps://cdn/ad2.ts\n\
+#EXTINF:2.000,live\nhttps://cdn/2.ts\n";
+
+    #[test]
+    fn twitch_ad_break_is_removed_by_its_duration() {
+        let (out, removed) = strip_twitch_ads(TWITCH);
+        assert_eq!(removed, 2);
+        assert!(!out.contains("ad1.ts") && !out.contains("ad2.ts"));
+        assert!(!out.contains("DATERANGE") && !out.contains("PREFETCH"));
+        assert!(out.contains("https://cdn/1.ts") && out.contains("https://cdn/2.ts"));
+        assert_eq!(out.matches("#EXT-X-DISCONTINUITY").count(), 1);
+    }
+
+    #[test]
+    fn twitch_ad_without_duration_drops_only_the_next_segment() {
+        let text = "#EXTM3U\n#EXT-X-DATERANGE:ID=\"stitched-ad-9\",CLASS=\"twitch-stitched-ad\"\n\
+#EXTINF:2.000,\nhttps://cdn/ad.ts\n#EXTINF:2.000,\nhttps://cdn/show.ts\n";
+        let (out, removed) = strip_twitch_ads(text);
+        assert_eq!(removed, 1);
+        assert!(out.contains("https://cdn/show.ts") && !out.contains("ad.ts"));
+    }
+
+    #[test]
+    fn playlist_without_ads_is_unchanged_except_prefetch() {
+        let text = "#EXTM3U\n#EXTINF:2.000,\nhttps://cdn/1.ts\n#EXTINF:2.000,\nhttps://cdn/2.ts\n";
+        let (out, removed) = strip_twitch_ads(text);
+        assert_eq!(removed, 0);
+        assert_eq!(out, text);
     }
 
     #[test]
