@@ -6,7 +6,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use media_lite_core::http;
-use media_lite_player::{mpv, Event, Filters, Mode, Options, Player, Proxy};
+use media_lite_player::{mpv, Event, Filters, LoadOptions, Mode, Options, Player, Proxy};
 
 const MASTER: &str = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
 
@@ -84,4 +84,80 @@ fn player_notices_when_mpv_was_closed() {
     player
         .load("av://lavfi:testsrc=duration=1", &Default::default())
         .expect("loadfile en el mpv nuevo");
+}
+
+/// Video y audio por separado, como los videos de YouTube: mpv tiene que abrir y elegir las dos
+/// pistas. Antes el audio se agregaba con `audio-add` apenas después de `loadfile`, mpv lo
+/// rechazaba porque el archivo todavía no estaba abierto, y el video quedaba sin sonido.
+#[test]
+#[ignore = "necesita mpv y ffmpeg"]
+fn separate_audio_track_is_selected() {
+    // Archivos de verdad: mpv solo une fuentes en las que se puede saltar (no sirve `av://lavfi`).
+    let dir = std::env::temp_dir().join(format!("media-lite-dash-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("carpeta temporal");
+    let video_file = dir.join("video.mp4");
+    let audio_file = dir.join("audio.m4a");
+    for (input, extra, out) in [
+        ("testsrc=size=160x90:rate=10", "-an", &video_file),
+        ("sine=frequency=440", "-vn", &audio_file),
+    ] {
+        let status = Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                input,
+            ])
+            .args(["-t", "5", extra])
+            .arg(out)
+            .status()
+            .expect("ffmpeg instalado");
+        assert!(status.success(), "ffmpeg no generó {}", out.display());
+    }
+
+    let player = Player::spawn(&Options {
+        mode: Mode::Video,
+        vo: "null".into(),
+        ao: Some("null".into()),
+        ..Options::default()
+    })
+    .expect("mpv instalado");
+    player
+        .load(
+            &video_file.display().to_string(),
+            &LoadOptions {
+                audio_url: Some(audio_file.display().to_string()),
+            },
+        )
+        .expect("loadfile");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let (mut video, mut audio) = (false, false);
+    while Instant::now() < deadline && !(video && audio) {
+        match player.events().recv_timeout(Duration::from_millis(200)) {
+            Ok(Event::Property { name, value }) if name == "track-list" => {
+                let selected = |kind: &str| {
+                    value.as_array().is_some_and(|tracks| {
+                        tracks
+                            .iter()
+                            .any(|t| t["type"] == kind && t["selected"] == true)
+                    })
+                };
+                video = selected("video");
+                audio = selected("audio");
+            }
+            Ok(Event::EndFile { reason }) => panic!("mpv terminó el archivo: {reason}"),
+            _ => {}
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(video, "mpv no eligió la pista de video");
+    assert!(
+        audio,
+        "mpv no eligió la pista de audio: el video quedaría sin sonido"
+    );
 }

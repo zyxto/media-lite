@@ -446,7 +446,7 @@ Otras medidas: binario de release de 18,4 MB con Slint (software y femtovg). Fem
 - Prueba de punta a punta con mpv sin pantalla (`vo=null`) y el HLS público de prueba a través del proxy: `time-pos` avanza. Prueba en `crates/player/tests/playback.rs` (`cargo test -- --ignored`, necesita red).
 - Con el app abriendo el primer video: mpv con variantes de 1080p usaba **468 MB**. Con el límite de 480p bajó a **194 MB**. El objetivo de app + mpv a 480p es < 220 MB; con el app en release (~40 MB) quedan ~235 MB, así que hay que bajarlo: pendiente de medir en la T4500 y de probar `--vd-lavc-threads=1` y `--cache-secs`.
 
-**Terminado cuando** una URL HLS y un par video+audio separados se puedan ver en ventana flotante, controlados desde la app. → HLS: sí. Par video+audio separado (`audio-add`): implementado, sin prueba todavía.
+**Terminado cuando** una URL HLS y un par video+audio separados se puedan ver en ventana flotante, controlados desde la app. → HLS: sí. Par video+audio separado: sí, unido en un solo `edl://` (con `audio-add` mpv rechazaba el audio porque llegaba antes de que abriera el archivo, y los videos de YouTube quedaban sin sonido). Prueba en `crates/player/tests/playback.rs` (necesita mpv y ffmpeg), y probado en la notebook con un video de YouTube.
 
 ### Fase 3: TV gratis, migrar Lumière (1–2 semanas)
 

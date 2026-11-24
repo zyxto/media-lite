@@ -64,8 +64,28 @@ impl Default for Options {
 /// hace un `seek` cuando mpv confirma el archivo.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LoadOptions {
-    /// Pista de audio separada (DASH: video y audio por separado).
+    /// Pista de audio separada (DASH: video y audio por separado). Se une al video en un solo
+    /// archivo (ver `merged_url`).
     pub audio_url: Option<String>,
+}
+
+/// Une un video y un audio separados en un solo archivo `edl://`, como hace el `ytdl_hook` de mpv.
+///
+/// No se usa `audio-add`: `loadfile` es asíncrono y mpv rechaza `audio-add` hasta que el archivo
+/// termina de abrir («error running command»), así que el video quedaba sin sonido. Con una sola
+/// URL no hay carrera, y los saltos y las recargas mueven las dos pistas juntas.
+pub fn merged_url(video: &str, audio: &str) -> String {
+    format!(
+        "edl://!no_clip;!no_chapters;{};!new_stream;!no_clip;!no_chapters;{}",
+        edl_escape(video),
+        edl_escape(audio)
+    )
+}
+
+/// Escribe una URL dentro de un EDL como `%largo%texto`, con el largo en bytes: así sus `;`, `,`
+/// o `%` no se confunden con la sintaxis del EDL.
+fn edl_escape(text: &str) -> String {
+    format!("%{}%{}", text.len(), text)
 }
 
 #[derive(Debug)]
@@ -172,14 +192,13 @@ impl Player {
 
     /// Carga un archivo o URL, reemplazando lo que se estaba viendo.
     pub fn load(&self, url: &str, options: &LoadOptions) -> std::io::Result<()> {
+        let target = match &options.audio_url {
+            Some(audio) => merged_url(url, audio),
+            None => url.to_string(),
+        };
         // Sin mapa de opciones: esta forma la aceptan todas las versiones de mpv.
         self.ipc
-            .command(&[json!("loadfile"), json!(url), json!("replace")])?;
-        if let Some(audio) = &options.audio_url {
-            self.ipc
-                .command(&[json!("audio-add"), json!(audio), json!("select")])?;
-        }
-        Ok(())
+            .command(&[json!("loadfile"), json!(target), json!("replace")])
     }
 
     pub fn set_pause(&self, pause: bool) -> std::io::Result<()> {
@@ -337,6 +356,16 @@ mod tests {
         assert!(args.contains(&"--no-border".to_string()));
         assert!(args.iter().any(|a| a.starts_with("--geometry=480x270")));
         assert!(args.contains(&"--ytdl=no".to_string()));
+    }
+
+    #[test]
+    fn separate_audio_is_merged_into_one_edl() {
+        // El largo va en bytes: «ñ» ocupa dos. El `;` de la URL queda adentro del escape.
+        assert_eq!(
+            merged_url("https://v/1?a=1;b", "https://a/ñ"),
+            "edl://!no_clip;!no_chapters;%17%https://v/1?a=1;b;!new_stream;\
+             !no_clip;!no_chapters;%12%https://a/ñ"
+        );
     }
 
     #[test]
